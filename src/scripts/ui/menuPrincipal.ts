@@ -53,7 +53,11 @@ function abrirMenuPvp(player: Player): void {
     .button('Volver')
     .show(player)
     .then((respuesta) => {
-      if (respuesta.canceled || respuesta.selection === 2) return;
+      if (respuesta.canceled) return;
+      if (respuesta.selection === 2) {
+        abrirMenuPrincipal(player);
+        return;
+      }
       if (respuesta.selection === 0) abrirListaDeRetos(player);
       if (respuesta.selection === 1) abrirSolicitudesPvp(player);
     })
@@ -76,8 +80,11 @@ function abrirListaDeRetos(player: Player): void {
   form
     .show(player)
     .then((respuesta) => {
-      if (respuesta.canceled || respuesta.selection === undefined || respuesta.selection === 0)
+      if (respuesta.canceled || respuesta.selection === undefined) return;
+      if (respuesta.selection === 0) {
+        abrirMenuPvp(player);
         return;
+      }
       const retado = jugadores[respuesta.selection - 1];
       const retadoActual =
         retado && world.getPlayers().find((jugador) => jugador.name === retado.name);
@@ -118,8 +125,11 @@ function abrirSolicitudesPvp(player: Player): void {
   form
     .show(player)
     .then((respuesta) => {
-      if (respuesta.canceled || respuesta.selection === undefined || respuesta.selection === 0)
+      if (respuesta.canceled || respuesta.selection === undefined) return;
+      if (respuesta.selection === 0) {
+        abrirMenuPvp(player);
         return;
+      }
       const solicitud = solicitudes[respuesta.selection - 1];
       if (solicitud) abrirRespuestaSolicitud(player, solicitud.retador);
     })
@@ -137,7 +147,11 @@ function abrirRespuestaSolicitud(retado: Player, retadorNombre: string): void {
     .button('§7Volver')
     .show(retado)
     .then((respuesta) => {
-      if (respuesta.canceled || respuesta.selection === 2) return;
+      if (respuesta.canceled) return;
+      if (respuesta.selection === 2) {
+        abrirSolicitudesPvp(retado);
+        return;
+      }
       const aceptar = respuesta.selection === 0;
       const resultado = responderSolicitudPvp(retado, retadorNombre, aceptar);
       if (resultado === 'caducada') {

@@ -1,16 +1,16 @@
 import { world } from '@minecraft/server';
 import { ActionFormData } from '@minecraft/server-ui';
-import { DURACION_SOLICITUD_PVP_MS, crearSolicitudPvp, obtenerSolicitudesPvp, responderSolicitudPvp, } from '../pvp.js';
+import { DURACION_SOLICITUD_PVP_MS, crearSolicitudPvp, obtenerSolicitudesPvp, responderSolicitudPvp } from '../pvp.js';
 import { obtenerRankingConectados, obtenerResumenJugador } from '../ranking.js';
 export function abrirMenuPrincipal(player) {
     const { puntos, puesto } = obtenerResumenJugador(player);
     const form = new ActionFormData()
-        .title('§6§lSecret Kingdom')
+        .title('§lSecret Kingdom')
         .body([
         `§e${player.name}`,
         '§7━━━━━━━━━━━━━━━━',
         `§6Posición global: §f#${puesto}`,
-        `§bPuntos: §f${puntos}`,
+        `§bPuntos: §f${puntos}`
     ].join('\n'))
         .button('PvP')
         .button('Ranking');
@@ -37,11 +37,15 @@ function abrirMenuPvp(player) {
         .body('§7Elige qué quieres hacer.')
         .button('§cRetar jugador')
         .button(`§eSolicitudes (§f${solicitudes.length}§e)`)
-        .button('§7Volver')
+        .button('Volver')
         .show(player)
         .then((respuesta) => {
-        if (respuesta.canceled || respuesta.selection === 2)
+        if (respuesta.canceled)
             return;
+        if (respuesta.selection === 2) {
+            abrirMenuPrincipal(player);
+            return;
+        }
         if (respuesta.selection === 0)
             abrirListaDeRetos(player);
         if (respuesta.selection === 1)
@@ -53,15 +57,21 @@ function abrirListaDeRetos(player) {
     const jugadores = world.getPlayers().filter((jugador) => jugador.name !== player.name);
     const form = new ActionFormData()
         .title('§c§lRetar jugador')
-        .body(jugadores.length > 0 ? '§7Selecciona a un jugador conectado.' : '§7No hay otros jugadores conectados.')
+        .body(jugadores.length > 0
+        ? '§7Selecciona a un jugador conectado.'
+        : '§7No hay otros jugadores conectados.')
         .button('§7Volver');
     for (const jugador of jugadores)
         form.button(`§f${jugador.name}`);
     form
         .show(player)
         .then((respuesta) => {
-        if (respuesta.canceled || respuesta.selection === undefined || respuesta.selection === 0)
+        if (respuesta.canceled || respuesta.selection === undefined)
             return;
+        if (respuesta.selection === 0) {
+            abrirMenuPvp(player);
+            return;
+        }
         const retado = jugadores[respuesta.selection - 1];
         const retadoActual = retado && world.getPlayers().find((jugador) => jugador.name === retado.name);
         if (!retadoActual) {
@@ -82,15 +92,21 @@ function abrirSolicitudesPvp(player) {
     const solicitudes = obtenerSolicitudesPvp(player);
     const form = new ActionFormData()
         .title('§e§lSolicitudes de PvP')
-        .body(solicitudes.length > 0 ? '§7Selecciona una solicitud para responder.' : '§7No tienes solicitudes activas.')
+        .body(solicitudes.length > 0
+        ? '§7Selecciona una solicitud para responder.'
+        : '§7No tienes solicitudes activas.')
         .button('§7Volver');
     for (const solicitud of solicitudes)
         form.button(`§c${solicitud.retador}`);
     form
         .show(player)
         .then((respuesta) => {
-        if (respuesta.canceled || respuesta.selection === undefined || respuesta.selection === 0)
+        if (respuesta.canceled || respuesta.selection === undefined)
             return;
+        if (respuesta.selection === 0) {
+            abrirMenuPvp(player);
+            return;
+        }
         const solicitud = solicitudes[respuesta.selection - 1];
         if (solicitud)
             abrirRespuestaSolicitud(player, solicitud.retador);
@@ -106,8 +122,12 @@ function abrirRespuestaSolicitud(retado, retadorNombre) {
         .button('§7Volver')
         .show(retado)
         .then((respuesta) => {
-        if (respuesta.canceled || respuesta.selection === 2)
+        if (respuesta.canceled)
             return;
+        if (respuesta.selection === 2) {
+            abrirSolicitudesPvp(retado);
+            return;
+        }
         const aceptar = respuesta.selection === 0;
         const resultado = responderSolicitudPvp(retado, retadorNombre, aceptar);
         if (resultado === 'caducada') {
