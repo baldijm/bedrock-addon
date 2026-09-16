@@ -1,0 +1,19 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Minecraft: build scripts",
+      "type": "npm",
+      "script": "build",
+      "group": "build",
+      "problemMatcher": "$tsc"
+    },
+    {
+      "label": "Minecraft: watch scripts",
+      "type": "npm",
+      "script": "watch",
+      "isBackground": true,
+      "problemMatcher": "$tsc-watch"
+    }
+  ]
+}

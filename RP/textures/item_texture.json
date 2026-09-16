@@ -1,0 +1,12 @@
+{
+	"resource_pack_name": "SPB",
+	"texture_name": "atlas.items",
+	"texture_data": {
+		"spb_master_sword": {
+			"textures": "textures/items/master_sword"
+		},
+		"spb_red_diamond": {
+			"textures": "textures/items/red_diamond"
+		}
+	}
+}

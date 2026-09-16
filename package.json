@@ -1,0 +1,32 @@
+{
+  "name": "spb",
+  "version": "1.0.0",
+  "description": "Minecraft Bedrock add-on: SPB",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "watch": "tsc -p tsconfig.json --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "mcaddon": "npm run build && node tools/package-mcaddon.mjs",
+    "lint": "eslint src/scripts/**/*.ts",
+    "lint:fix": "npm run lint -- --fix",
+    "format": "prettier --write \"src/**/*.{ts,json}\" \"BP/**/*.{json,lang,mcfunction}\" \"RP/**/*.{json,lang}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,json}\" \"BP/**/*.{json,lang,mcfunction}\" \"RP/**/*.{json,lang}\""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@minecraft/server": "2.7.0",
+    "@minecraft/server-ui": "2.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "archiver": "^7.0.0",
+    "eslint": "^9.0.0",
+    "eslint-plugin-minecraft-linting": "^2.0.10",
+    "prettier": "^3.0.0",
+    "typescript": "^5.0.0"
+  }
+}

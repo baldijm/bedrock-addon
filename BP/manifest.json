@@ -1,0 +1,45 @@
+{
+  "format_version": 2,
+  "metadata": {
+    "authors": ["spb."],
+    "generated_with": {
+      "bridge": ["2.7.54"],
+      "dash": ["0.11.7"]
+    }
+  },
+  "header": {
+    "name": "SPB",
+    "description": "NEW SPB ADDONN",
+    "min_engine_version": [1, 21, 80],
+    "uuid": "499bdb1a-fabe-4234-8eea-b08f9c74f751",
+    "version": [1, 0, 15]
+  },
+  "modules": [
+    {
+      "type": "data",
+      "uuid": "c95def68-0675-4e92-9213-431cd8475ec5",
+      "version": [1, 0, 0]
+    },
+    {
+      "uuid": "14966dd0-7471-447d-92e8-4cba25a483bf",
+      "version": [1, 0, 15],
+      "type": "script",
+      "language": "javascript",
+      "entry": "scripts/main.js"
+    }
+  ],
+  "dependencies": [
+    {
+      "uuid": "fcf0b286-097c-4888-bab9-443f550932ac",
+      "version": [1, 0, 0]
+    },
+    {
+      "module_name": "@minecraft/server",
+      "version": "2.7.0"
+    },
+    {
+      "module_name": "@minecraft/server-ui",
+      "version": "2.0.0"
+    }
+  ]
+}

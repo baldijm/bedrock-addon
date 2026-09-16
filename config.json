@@ -1,0 +1,44 @@
+{
+	"type": "minecraftBedrock",
+	"name": "SPB",
+	"namespace": "spb",
+	"authors": [
+		"spb."
+	],
+	"targetVersion": "1.26.0",
+	"description": "NEW SPB ADDONN",
+	"experimentalGameplay": {
+		"upcomingCreatorFeatures": false,
+		"experimentalCreatorCameraFeatures": false,
+		"enableGameTestFramework": false,
+		"renderDragonFeatures": false,
+		"educationEdition": false
+	},
+	"bdsProject": false,
+	"packs": {
+		"behaviorPack": "./BP",
+		"resourcePack": "./RP"
+	},
+	"worlds": [
+		"./worlds/*"
+	],
+	"compiler": {
+		"plugins": [
+			"generatorScripts",
+			"typeScript",
+			"entityIdentifierAlias",
+			"customEntityComponents",
+			"customItemComponents",
+			"customBlockComponents",
+			"customCommands",
+			"moLang",
+			"formatVersionCorrection",
+			[
+				"simpleRewrite",
+				{
+					"packName": "SPB"
+				}
+			]
+		]
+	}
+}
