@@ -1,6 +1,7 @@
 import { Player, ScoreboardObjective, world } from '@minecraft/server';
 
 export const OBJETIVO_PUNTOS = 'spb_puntos';
+const PROPIEDAD_NOMBRES_RANKING = 'spb:nombres_ranking';
 
 type EntradaRanking = {
   nombre: string;
@@ -23,13 +24,41 @@ function obtenerObjetivoPuntos(): ScoreboardObjective {
   return objetivo;
 }
 
-/** Registra al jugador con 0 puntos la primera vez que entra. */
-export function asegurarJugadorEnRanking(player: Player): void {
-  const objetivo = obtenerObjetivoPuntos();
+function obtenerNombresGuardados(): Record<string, string> {
+  const valor = world.getDynamicProperty(PROPIEDAD_NOMBRES_RANKING);
+  if (typeof valor !== 'string') return {};
 
-  if (!objetivo.hasParticipant(player)) {
+  try {
+    const nombres = JSON.parse(valor) as unknown;
+    return nombres && typeof nombres === 'object' && !Array.isArray(nombres)
+      ? (nombres as Record<string, string>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function guardarNombreJugador(player: Player): void {
+  const id = player.scoreboardIdentity?.id;
+  if (id === undefined) return;
+
+  const nombres = obtenerNombresGuardados();
+  if (nombres[String(id)] === player.name) return;
+
+  nombres[String(id)] = player.name;
+  world.setDynamicProperty(PROPIEDAD_NOMBRES_RANKING, JSON.stringify(nombres));
+}
+
+/** Registra al jugador con 0 puntos la primera vez que entra. */
+export function asegurarJugadorEnRanking(player: Player): boolean {
+  const objetivo = obtenerObjetivoPuntos();
+  const esJugadorNuevo = !objetivo.hasParticipant(player);
+  if (esJugadorNuevo) {
     objetivo.setScore(player, 0);
   }
+
+  guardarNombreJugador(player);
+  return esJugadorNuevo;
 }
 
 function obtenerPuestoGlobal(player: Player, objetivo: ScoreboardObjective): number {
@@ -55,7 +84,7 @@ export function obtenerResumenJugador(player: Player): ResumenJugador {
 export function actualizarResumenRanking(player: Player): void {
   const { puntos, puesto } = obtenerResumenJugador(player);
 
-  player.onScreenDisplay.setActionBar(`§6Rango: §f#${puesto}   §bPuntos: §f${puntos}`);
+  player.onScreenDisplay.setActionBar(`§6Posición: §f#${puesto}   §bPuntos: §f${puntos}`);
 }
 
 /**
@@ -70,22 +99,17 @@ export function agregarPuntos(player: Player, cantidad: number): number {
   return total;
 }
 
-/**
- * Devuelve exclusivamente jugadores conectados, pero su puesto se calcula
- * contra todos los participantes históricos de spb_puntos.
- */
-export function obtenerRankingConectados(): EntradaRanking[] {
+/** Devuelve todos los participantes históricos guardados en spb_puntos. */
+export function obtenerRankingCompleto(): EntradaRanking[] {
   const objetivo = obtenerObjetivoPuntos();
+  const registros = objetivo.getScores();
+  const nombres = obtenerNombresGuardados();
 
-  return world
-    .getPlayers()
-    .map((player) => {
-      asegurarJugadorEnRanking(player);
-      return {
-        nombre: player.name,
-        puntos: objetivo.getScore(player) ?? 0,
-        puesto: obtenerPuestoGlobal(player, objetivo),
-      };
-    })
+  return registros
+    .map((entrada) => ({
+      nombre: nombres[String(entrada.participant.id)] ?? entrada.participant.displayName,
+      puntos: entrada.score,
+      puesto: registros.filter((otraEntrada) => otraEntrada.score > entrada.score).length + 1,
+    }))
     .sort((a, b) => b.puntos - a.puntos || a.nombre.localeCompare(b.nombre));
 }

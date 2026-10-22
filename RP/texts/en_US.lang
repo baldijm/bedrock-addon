@@ -3,3 +3,6 @@ item.spawn_egg.entity.spb:chunk_corner.name=Spawn Chunk Corner
 entity.spb:chunk_corner.name=Chunk Corner
 item.spb:rubi=Rubí
 item.spb:red_diamond=Diamante rojo
+item.spb:menu=Menú
+tile.spb:bloque_verde.name=Bloque verde
+tile.spb:bloque_rojo.name=Bloque rojo

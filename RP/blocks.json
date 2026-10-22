@@ -1,0 +1,13 @@
+{
+  "format_version": "1.19.30",
+  "spb:bloque_verde": {
+    "sound": "stone",
+    "textures": "spb_bloque_verde",
+    "carried_textures": "spb_bloque_verde"
+  },
+  "spb:bloque_rojo": {
+    "sound": "stone",
+    "textures": "spb_bloque_rojo",
+    "carried_textures": "spb_bloque_rojo"
+  }
+}

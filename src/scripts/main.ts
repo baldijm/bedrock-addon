@@ -1,18 +1,2 @@
-import { system, world } from '@minecraft/server';
-import { actualizarResumenRanking, asegurarJugadorEnRanking } from './ranking.js';
-import { abrirMenuPrincipal } from './ui/menuPrincipal.js';
-
-world.afterEvents.playerSpawn.subscribe((event) => {
-  if (!event.initialSpawn) return;
-
-  system.run(() => {
-    asegurarJugadorEnRanking(event.player);
-    actualizarResumenRanking(event.player);
-  });
-});
-
-world.afterEvents.itemUse.subscribe((event) => {
-  if (event.itemStack.typeId === 'minecraft:bread' && event.itemStack.nameTag === 'Form Opener') {
-    system.run(() => abrirMenuPrincipal(event.source));
-  }
-});
+// Punto de entrada exigido por BP/manifest.json. La lógica de inicio vive en core.
+import './core/bootstrap.js';

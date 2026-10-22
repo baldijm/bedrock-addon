@@ -1,0 +1,20 @@
+{
+  "format_version": "1.20.50",
+  "minecraft:recipe_shapeless": {
+    "description": {
+      "identifier": "spb:menu_from_redstone"
+    },
+    "tags": [
+      "crafting_table"
+    ],
+    "ingredients": [
+      {
+        "item": "minecraft:redstone"
+      }
+    ],
+    "result": {
+      "item": "spb:menu",
+      "count": 1
+    }
+  }
+}

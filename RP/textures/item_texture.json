@@ -7,6 +7,9 @@
 		},
 		"spb_red_diamond": {
 			"textures": "textures/items/red_diamond"
+		},
+		"spb_menu_opener": {
+			"textures": "textures/items/menu_opener"
 		}
 	}
 }

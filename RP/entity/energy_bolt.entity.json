@@ -1,0 +1,26 @@
+{
+  "format_version": "1.10.0",
+  "minecraft:client_entity": {
+    "description": {
+      "identifier": "spb:energy_bolt",
+      "materials": {
+        "default": "entity_alphatest"
+      },
+      "textures": {
+        "default": "textures/entity/energy_bolt"
+      },
+      "geometry": {
+        "default": "geometry.item_sprite"
+      },
+      "animations": {
+        "billboard": "animation.spb.energy_bolt.billboard"
+      },
+      "scripts": {
+        "animate": ["billboard"]
+      },
+      "render_controllers": [
+        "controller.render.spb.energy_bolt"
+      ]
+    }
+  }
+}

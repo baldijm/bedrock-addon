@@ -1,0 +1,8 @@
+{
+  "resource_pack_name": "SPB",
+  "texture_name": "atlas.terrain",
+  "texture_data": {
+    "spb_bloque_verde": { "textures": "textures/blocks/bloque_verde" },
+    "spb_bloque_rojo": { "textures": "textures/blocks/bloque_rojo" }
+  }
+}

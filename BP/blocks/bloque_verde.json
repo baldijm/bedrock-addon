@@ -1,0 +1,26 @@
+{
+  "format_version": "1.21.80",
+  "minecraft:block": {
+    "description": {
+      "identifier": "spb:bloque_verde",
+      "menu_category": {
+        "category": "construction"
+      }
+    },
+    "components": {
+      "minecraft:geometry": "minecraft:geometry.full_block",
+      "minecraft:destructible_by_mining": {
+        "seconds_to_destroy": 1.5
+      },
+      "minecraft:destructible_by_explosion": {
+        "explosion_resistance": 6
+      },
+      "minecraft:material_instances": {
+        "*": {
+          "texture": "spb_bloque_verde",
+          "render_method": "opaque"
+        }
+      }
+    }
+  }
+}
