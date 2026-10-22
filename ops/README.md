@@ -25,6 +25,8 @@ El 22 de octubre de 2026 se creó en la cuenta actual de Cloudflare el bucket pr
 
 La opción prevista para subir archivos es [restic](https://restic.readthedocs.io/en/stable/030_preparing_a_new_repo.html), que cifra el repositorio antes de enviar datos a un destino S3 compatible. Requiere tres secretos independientes de Git: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` y una contraseña fuerte de restic indicada mediante `RESTIC_PASSWORD_FILE`. La contraseña de restic **no es** la clave de Cloudflare; perderla impide restaurar el repositorio cifrado. Mantener copias recuperables de estos secretos fuera de Azure y de GitHub, con acceso restringido. La ubicación del repositorio es configurable para permitir cambiar de cuenta o proveedor:
 
+El 22 de octubre de 2026 se instaló `restic 0.16.4` desde el repositorio de Ubuntu en la VM Azure; `bedrock.service` seguía activo después de la instalación. No se configuraron secretos ni se creó todavía el repositorio R2.
+
 ```text
 RESTIC_REPOSITORY=s3:https://<ACCOUNT_ID>.r2.cloudflarestorage.com/spb-bedrock-world-backups
 ```
