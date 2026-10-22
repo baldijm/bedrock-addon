@@ -1,0 +1,45 @@
+{
+  "format_version": 2,
+  "header": {
+    "name": "SPB HTTP Test",
+    "description": "Prueba independiente de conexi\u00f3n con Node.js",
+    "uuid": "c3835c95-35e5-41e9-8db2-e269df6d78ea",
+    "version": [
+      1,
+      0,
+      0
+    ],
+    "min_engine_version": [
+      1,
+      21,
+      80
+    ]
+  },
+  "modules": [
+    {
+      "type": "script",
+      "language": "javascript",
+      "entry": "scripts/main.js",
+      "uuid": "fa4cf008-6894-405d-93ca-8c1db6e6f1f5",
+      "version": [
+        1,
+        0,
+        0
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "module_name": "@minecraft/server",
+      "version": "2.7.0"
+    },
+    {
+      "module_name": "@minecraft/server-net",
+      "version": "1.0.0-beta"
+    },
+    {
+      "module_name": "@minecraft/server-admin",
+      "version": "1.0.0-beta"
+    }
+  ]
+}
