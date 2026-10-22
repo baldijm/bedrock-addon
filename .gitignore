@@ -7,3 +7,4 @@ Desktop.ini
 builds
 node_modules
 BP/scripts/**/*.js.map
+**/.api-token
