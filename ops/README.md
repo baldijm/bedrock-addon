@@ -27,6 +27,8 @@ La opción prevista para subir archivos es [restic](https://restic.readthedocs.i
 
 El 22 de octubre de 2026 se instaló `restic 0.16.4` desde el repositorio de Ubuntu en la VM Azure; `bedrock.service` seguía activo después de la instalación. No se configuraron secretos ni se creó todavía el repositorio R2.
 
+`configure_r2_secrets.py` prepara un único archivo privado `/etc/bedrock-backup/r2.json` con las dos claves R2 y la contraseña distinta de restic. Solo se ejecuta manualmente en una terminal interactiva como root: solicita los tres valores sin mostrarlos, rechaza sobrescribir una configuración previa, crea la carpeta con permisos `0700` y el archivo con `0600`. No imprime secretos, no conecta a R2 y no modifica Minecraft. La persona propietaria debe introducir los valores directamente desde su gestor de contraseñas; nunca enviarlos por chat ni como argumentos de línea de comandos. La configuración permanece fuera del repositorio y no sustituye una copia segura de recuperación de la contraseña de restic.
+
 ```text
 RESTIC_REPOSITORY=s3:https://<ACCOUNT_ID>.r2.cloudflarestorage.com/spb-bedrock-world-backups
 ```
