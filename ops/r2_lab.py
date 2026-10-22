@@ -90,13 +90,13 @@ def probe(environment):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("init", "probe"))
+    parser.add_argument("action", choices=("init", "probe", "init-and-probe"))
     arguments = parser.parse_args()
     environment = load_environment()
-    if arguments.action == "init":
+    if arguments.action in ("init", "init-and-probe"):
         run_restic(environment, "init")
         print("OK: repositorio cifrado inicializado en R2; todavía no hay respaldo de Minecraft.")
-    else:
+    if arguments.action in ("probe", "init-and-probe"):
         probe(environment)
 
 
