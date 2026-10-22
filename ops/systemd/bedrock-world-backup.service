@@ -1,0 +1,18 @@
+[Unit]
+Description=Respaldo autorizado y verificable de Minecraft Bedrock
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/bedrock-backup-tools
+ExecStart=/usr/bin/python3 /opt/bedrock-backup-tools/production_backup.py --authorized-maintenance
+TimeoutStartSec=20min
+Nice=10
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadOnlyPaths=/opt/bedrock /etc/bedrock-backup
+ReadWritePaths=/var/backups/bedrock
+NoNewPrivileges=true

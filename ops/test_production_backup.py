@@ -36,6 +36,14 @@ class ProductionBackupTests(unittest.TestCase):
             self.assertEqual([call.args[0] for call in service.call_args_list], ["stop", "start"])
             wait.assert_called_once()
 
+    def test_retention_only_targets_real_world_snapshots(self):
+        with patch.object(production_backup.r2_lab, "run_restic") as restic:
+            production_backup.apply_retention({"RESTIC_REPOSITORY": "example"})
+            self.assertEqual(
+                restic.call_args.args[1:],
+                ("forget", "--tag", "spb-world", "--keep-last", "8", "--prune"),
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

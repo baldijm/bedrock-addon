@@ -1,0 +1,11 @@
+[Unit]
+Description=Respaldo semanal de Minecraft Bedrock
+
+[Timer]
+OnCalendar=Sun *-*-* 04:00:00 America/Mexico_City
+RandomizedDelaySec=15min
+Persistent=false
+Unit=bedrock-world-backup.service
+
+[Install]
+WantedBy=timers.target

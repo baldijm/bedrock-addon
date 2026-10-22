@@ -137,6 +137,13 @@ def upload_and_restore(path, expected_sha256, environment):
     return snapshot_id
 
 
+def apply_retention(environment):
+    """Conserva ocho copias reales; nunca afecta las pruebas de laboratorio."""
+    r2_lab.run_restic(
+        environment, "forget", "--tag", "spb-world", "--keep-last", "8", "--prune"
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--authorized-maintenance", action="store_true")
@@ -157,9 +164,11 @@ def main():
     print(f"Archivo local privado: {path}", flush=True)
     print(f"SHA-256: {result['sha256']}; archivos: {result['files']}", flush=True)
     snapshot_id = upload_and_restore(path, result["sha256"], environment)
+    apply_retention(environment)
     if not service_running():
         raise RuntimeError("Bedrock dejó de estar activo durante la verificación remota")
     print(f"R2 verificado: snapshot {snapshot_id}; archivo restaurado y hashes correctos.")
+    print("Retención aplicada: se conservan hasta ocho snapshots con etiqueta spb-world.")
     print("No se probó el arranque del mundo en un Minecraft aislado ni el acceso de jugadores.")
 
 
