@@ -2,7 +2,7 @@
 
 `world_backup.py` archiva **todos** los mundos de `worlds/`, `server.properties`, `allowlist.json` y `permissions.json`. El mundo activo se selecciona mediante `level-name` en `server.properties`; en la revisión de Azure del 22 de octubre de 2026 era `Bedrock HTTP Test`. Los otros mundos también se conservan. El archivo no incluye `.api-token`, otros secretos ni el binario del servidor.
 
-La herramienta solo crea el archivo cuando `bedrock.service` y `bedrock_server` no están activos. **No detiene ni reinicia el servidor**. El operador debe garantizar que siga detenido durante toda la copia; el programa comprueba el estado antes y después. No se ha ejecutado sobre producción.
+La herramienta solo crea el archivo cuando `bedrock.service` y `bedrock_server` no están activos. **Por sí misma no detiene ni reinicia el servidor**. El operador debe garantizar que siga detenido durante toda la copia; el programa comprueba el estado antes y después. El 22 de octubre de 2026 se usó sobre producción dentro de una ventana de mantenimiento autorizada, mediante `production_backup.py`, que detuvo Bedrock, creó y verificó el archivo, e inició el servicio de nuevo antes de subirlo a R2.
 
 Ejemplo para un servidor detenido, sujeto a una ventana de mantenimiento autorizada:
 
@@ -36,8 +36,17 @@ RESTIC_REPOSITORY=s3:https://<ACCOUNT_ID>.r2.cloudflarestorage.com/spb-bedrock-w
 El flujo previsto es:
 
 1. **Hecho:** validar en un laboratorio que la versión instalada de restic puede crear y abrir el repositorio R2 con el token limitado, sin imprimir secretos. `r2_lab.py init` inicializa el repositorio cifrado **una sola vez** en el bucket esperado; ya se ejecutó y **no debe repetirse**. `r2_lab.py probe` sube solo 256 bytes ficticios, revisa el repositorio y restaura ese archivo en una carpeta temporal; `r2_lab.py init-and-probe` realizó ambas acciones en la primera ejecución. No leyó el mundo ni modificó el servicio. La prueba dejó su snapshot en R2 para una revisión posterior y no configuró retención.
-2. Obtener un archivo consistente con `world_backup.py create` durante una ventana de mantenimiento autorizada o con un método de instantánea probado. El script **no** detiene el servicio y rechaza crear la copia si Bedrock sigue activo. No ejecutar `--apply`, detener ni reiniciar producción sin autorización expresa.
-3. Verificar el archivo local (`world_backup.py verify`), subirlo con `restic backup <archivo>`, ejecutar `restic check --read-data` y restaurar el snapshot a una carpeta **nueva** para volver a verificar el archivo y probar el mundo en una instalación aislada. Una verificación de hashes no prueba por sí sola que Minecraft arranque.
+2. **Hecho con autorización expresa:** obtener un archivo consistente con `world_backup.py create` durante una ventana de mantenimiento. `production_backup.py` hizo comprobaciones antes de detener el servicio, reinició Bedrock en un bloque de recuperación aunque fallara el archivado, y confirmó `bedrock.service` activo junto con el proceso `bedrock_server`. No ejecutar `--apply`, detener ni reiniciar producción de nuevo sin autorización expresa.
+3. **Hecho parcialmente:** verificar el archivo local, subirlo con restic, ejecutar `restic check --read-data`, restaurar el snapshot a una carpeta **nueva**, comparar SHA-256, verificar el manifiesto y extraer los datos en laboratorio. Todo eso terminó correctamente. **Pendiente:** probar el arranque del mundo y el acceso a Minecraft en una instalación aislada; los hashes y el estado del proceso de producción no son una prueba de salud real del juego.
 4. Conservar el archivo local y el respaldo anterior hasta demostrar que el nuevo se restaura. Definir retención y alertas de consumo antes de automatizar; no activar una tarea periódica ni borrar snapshots por ahora.
 
-R2 Standard tiene una asignación mensual gratuita compartida entre los buckets de la cuenta, no una asignación nueva por bucket. El uso puede superar la capa gratuita si los mundos o el número de copias crecen; revisar el [precio vigente de R2](https://developers.cloudflare.com/r2/pricing/) y el panel de facturación antes de fijar frecuencia y retención. Tampoco hay todavía una prueba de restauración real desde R2.
+R2 Standard tiene una asignación mensual gratuita compartida entre los buckets de la cuenta, no una asignación nueva por bucket. El uso puede superar la capa gratuita si los mundos o el número de copias crecen; revisar el [precio vigente de R2](https://developers.cloudflare.com/r2/pricing/) y el panel de facturación antes de fijar frecuencia y retención. La restauración del archivo desde R2 sí se comprobó; falta probar el mundo en Minecraft aislado.
+
+## Registro de la primera copia real (22 de octubre de 2026)
+
+- Datos fuente: `610986` bytes; 24 archivos de mundo/configuración.
+- Archivo local privado: `/var/backups/bedrock/bedrock-20261022T230215Z-fe31ab57.tar.gz` (conservar; no borrar automáticamente).
+- SHA-256 del archivo: `dbf1ef5b78f390b6e6dc9ada178c83423ad152b92d4851668aea9070892c550d`.
+- Snapshot cifrado restic en R2: `39b64d32e210fcc12e04c4d1d397ab73698c2f8c260ff772a28a6d2dada77c22`.
+- Resultado: `restic check --read-data`, restauración desde R2, igualdad SHA-256, verificación del manifiesto y extracción en carpeta nueva, todo correcto. Al final `bedrock.service` y `bedrock_server` estaban activos. **No** se verificó el acceso de jugadores ni el arranque aislado del mundo.
+- Ni las claves R2 ni la contraseña restic están en GitHub. Sin la contraseña restic no puede restaurarse el snapshot; mantenerla recuperable fuera de la VM y del repositorio.
