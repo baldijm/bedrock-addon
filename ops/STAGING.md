@@ -81,6 +81,11 @@ repositorio de GitHub (no a los archivos del repo):
 - `BEDROCK_STAGING_SSH_KEY`: clave privada exclusiva para ese automatismo,
   limitada en Azure al usuario que ejecuta el despliegue y rotada si se expone.
 
+La clave queda registrada en Azure con `restrict` y un *forced command*:
+no permite shell, túneles, reenvío ni comandos distintos de desplegar staging,
+o promover producción con su flag explícito. La llave privada se guarda sólo
+en el secreto de Actions y se elimina de la estación de trabajo tras guardarla.
+
 Los cambios a las herramientas en `ops/` no reinician staging automáticamente:
 se instalan de forma deliberada con `install_deploy_tools.sh` y se validan antes
 de usarse. Así un cambio operativo no se mezcla con una actualización de juego.

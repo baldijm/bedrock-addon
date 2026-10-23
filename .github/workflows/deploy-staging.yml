@@ -42,4 +42,4 @@ jobs:
           REQUESTED_COMMIT: ${{ inputs.commit || github.sha }}
         run: |
           ssh -o StrictHostKeyChecking=accept-new -i ~/.ssh/bedrock-staging "azureuser@$HOST" \
-            "sudo /opt/bedrock-deploy/addon_deploy.py staging --commit '$REQUESTED_COMMIT'"
+            "sudo /opt/bedrock-deploy/addon_deploy.py staging --commit $REQUESTED_COMMIT"

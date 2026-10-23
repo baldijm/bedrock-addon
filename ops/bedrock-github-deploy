@@ -1,0 +1,19 @@
+#!/bin/sh
+# Forced command for the GitHub Actions deploy key.  Never eval SSH input.
+set -eu
+
+command=${SSH_ORIGINAL_COMMAND-}
+commit=${command##* }
+
+if printf '%s' "$command" | grep -Eq '^sudo /opt/bedrock-deploy/addon_deploy.py staging --commit [0-9a-f]{40}$'; then
+    exec sudo /opt/bedrock-deploy/addon_deploy.py staging --commit "$commit"
+fi
+
+if printf '%s' "$command" | grep -Eq '^sudo /opt/bedrock-deploy/addon_deploy.py production --commit [0-9a-f]{40} --authorized-production-maintenance$'; then
+    commit=${command#* --commit }
+    commit=${commit%% *}
+    exec sudo /opt/bedrock-deploy/addon_deploy.py production --commit "$commit" --authorized-production-maintenance
+fi
+
+echo 'Comando SSH no autorizado para esta clave.' >&2
+exit 126

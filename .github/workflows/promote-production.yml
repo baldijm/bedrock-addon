@@ -36,4 +36,4 @@ jobs:
           REQUESTED_COMMIT: ${{ inputs.commit }}
         run: |
           ssh -o StrictHostKeyChecking=accept-new -i ~/.ssh/bedrock-production "azureuser@$HOST" \
-            "sudo /opt/bedrock-deploy/addon_deploy.py production --commit '$REQUESTED_COMMIT' --authorized-production-maintenance"
+            "sudo /opt/bedrock-deploy/addon_deploy.py production --commit $REQUESTED_COMMIT --authorized-production-maintenance"
