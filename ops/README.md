@@ -6,6 +6,9 @@
 
 La herramienta solo crea el archivo cuando `bedrock.service` y `bedrock_server` no están activos. **Por sí misma no detiene ni reinicia el servidor**. El operador debe garantizar que siga detenido durante toda la copia; el programa comprueba el estado antes y después. El 22 de octubre de 2026 se usó sobre producción dentro de una ventana de mantenimiento autorizada, mediante `production_backup.py`, que detuvo Bedrock, creó y verificó el archivo, e inició el servicio de nuevo antes de subirlo a R2.
 
+Para el entorno separado de pruebas y las reglas que impiden confundirlo con
+producción, consultar [STAGING.md](STAGING.md).
+
 Ejemplo para un servidor detenido, sujeto a una ventana de mantenimiento autorizada:
 
 ```sh

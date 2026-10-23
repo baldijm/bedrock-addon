@@ -1,0 +1,26 @@
+[Unit]
+Description=Minecraft Bedrock Dedicated Server (staging)
+After=network.target
+
+[Service]
+Type=simple
+User=bedrock
+Group=bedrock
+WorkingDirectory=/opt/bedrock-staging
+Environment=LD_LIBRARY_PATH=/opt/bedrock-staging
+# A staging deployment must not receive the production API credential.
+Environment=SPB_API_TOKEN=
+ExecStart=/opt/bedrock-staging/bedrock_server
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=70
+KillSignal=SIGINT
+KillMode=control-group
+LimitNOFILE=1048576
+# The experimental HTTP pack targets loopback.  Blocking it keeps staging from
+# reaching the production-local API even if somebody accidentally adds a token.
+IPAddressDeny=127.0.0.0/8
+IPAddressDeny=::1/128
+
+[Install]
+WantedBy=multi-user.target
