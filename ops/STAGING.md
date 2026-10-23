@@ -13,9 +13,12 @@ sido probado.
   defecto. Se inicia sólo para una sesión de pruebas.
 - El archivo de credencial de producción no se copia a staging y el servicio
   vacía `SPB_API_TOKEN`.
-- El servicio rechaza conexiones hacia `127.0.0.0/8` y `::1`. Esto bloquea el
-  endpoint HTTP experimental que apunta a la API local de producción. No es
-  una afirmación de salud ni una prueba de la API.
+- El servicio no recibe `SPB_API_TOKEN` y el archivo de credencial de
+  producción no se copia. Como el módulo HTTP no hace una solicitud sin esa
+  credencial, una sesión normal de staging no alcanza la API real. Para probar
+  la integración HTTP se necesita una API y credencial de **staging** separadas;
+  no reutilizar las de producción. Esto no es una afirmación de salud ni una
+  prueba de la API.
 
 ## Antes de que un jugador entre
 
