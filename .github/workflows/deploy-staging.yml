@@ -1,6 +1,6 @@
-name: Desplegar staging
+name: Deploy staging
 
-on:
+"on":
   push:
     branches: [main]
     paths:

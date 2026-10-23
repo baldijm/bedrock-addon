@@ -1,6 +1,6 @@
-name: Promover a producción
+name: Promote production
 
-on:
+"on":
   workflow_dispatch:
     inputs:
       commit:
