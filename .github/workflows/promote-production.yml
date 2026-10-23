@@ -19,17 +19,20 @@ jobs:
     if: inputs.authorization == 'I_AUTHORIZE_PRODUCTION_MAINTENANCE'
     runs-on: ubuntu-latest
     environment: production
+    env:
+      HOST: ${{ secrets.BEDROCK_STAGING_HOST }}
+      SSH_KEY: ${{ secrets.BEDROCK_STAGING_SSH_KEY }}
     steps:
       - name: Preparar clave SSH temporal
         env:
-          SSH_KEY: ${{ secrets.BEDROCK_STAGING_SSH_KEY }}
+          SSH_KEY: ${{ env.SSH_KEY }}
         run: |
           install -m 700 -d ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/bedrock-production
           chmod 600 ~/.ssh/bedrock-production
       - name: Respaldar y promover el commit autorizado
         env:
-          HOST: ${{ secrets.BEDROCK_STAGING_HOST }}
+          HOST: ${{ env.HOST }}
           REQUESTED_COMMIT: ${{ inputs.commit }}
         run: |
           ssh -o StrictHostKeyChecking=accept-new -i ~/.ssh/bedrock-production "azureuser@$HOST" \

@@ -22,17 +22,25 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: staging
+    env:
+      HOST: ${{ secrets.BEDROCK_STAGING_HOST }}
+      SSH_KEY: ${{ secrets.BEDROCK_STAGING_SSH_KEY }}
     steps:
+      - name: Avisar si aún faltan secretos de despliegue
+        if: env.HOST == '' || env.SSH_KEY == ''
+        run: echo 'Despliegue omitido: faltan los secretos de staging.'
       - name: Preparar clave SSH temporal
+        if: env.HOST != '' && env.SSH_KEY != ''
         env:
-          SSH_KEY: ${{ secrets.BEDROCK_STAGING_SSH_KEY }}
+          SSH_KEY: ${{ env.SSH_KEY }}
         run: |
           install -m 700 -d ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/bedrock-staging
           chmod 600 ~/.ssh/bedrock-staging
       - name: Desplegar exactamente este commit en staging
+        if: env.HOST != '' && env.SSH_KEY != ''
         env:
-          HOST: ${{ secrets.BEDROCK_STAGING_HOST }}
+          HOST: ${{ env.HOST }}
           REQUESTED_COMMIT: ${{ inputs.commit || github.sha }}
         run: |
           ssh -o StrictHostKeyChecking=accept-new -i ~/.ssh/bedrock-staging "azureuser@$HOST" \
