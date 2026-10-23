@@ -83,7 +83,7 @@ export function expiredSessionCookie() {
 }
 
 export function hasServerToken(request: Request) {
-	const given = request.headers.get('x-spb-console-token') ?? '';
+	const given = request.headers.get('authorization') ?? '';
 	return (
 		given.length === env.STAGING_SERVER_TOKEN.length &&
 		equalBytes(encoder.encode(given), encoder.encode(env.STAGING_SERVER_TOKEN))

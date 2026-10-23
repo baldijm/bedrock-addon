@@ -75,7 +75,7 @@ async function solicitudConsola(ruta, datos) {
         request.method = HttpRequestMethod.Post;
         request.headers = [
             new HttpHeader("Content-Type", "application/json"),
-            new HttpHeader("X-SPB-Console-Token", token)
+            new HttpHeader("Authorization", token)
         ];
         request.body = JSON.stringify(datos || {});
 
