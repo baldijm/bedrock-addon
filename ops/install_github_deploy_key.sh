@@ -6,7 +6,7 @@ key_file=/tmp/bedrock_github_actions.pub
 authorized=/home/azureuser/.ssh/authorized_keys
 
 test -f "$key_file"
-key=$(cat "$key_file")
+key=$(tr -d '\r\n' < "$key_file")
 case "$key" in
   ssh-ed25519\ *github-actions-bedrock-deploy) ;;
   *) echo 'La clave pública no tiene el formato esperado.' >&2; exit 1 ;;
