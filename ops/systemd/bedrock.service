@@ -1,0 +1,20 @@
+[Unit]
+Description=Minecraft Bedrock Dedicated Server
+After=network.target
+
+[Service]
+Type=simple
+User=bedrock
+Group=bedrock
+WorkingDirectory=/opt/bedrock
+Environment=LD_LIBRARY_PATH=/opt/bedrock
+ExecStart=/opt/bedrock/bedrock_server
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=70
+KillSignal=SIGINT
+KillMode=control-group
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target

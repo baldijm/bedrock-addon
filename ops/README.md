@@ -2,6 +2,8 @@
 
 `world_backup.py` archiva **todos** los mundos de `worlds/`, `server.properties`, `allowlist.json` y `permissions.json`. El mundo activo se selecciona mediante `level-name` en `server.properties`; en la revisión de Azure del 22 de octubre de 2026 era `Bedrock HTTP Test`. Los otros mundos también se conservan. El archivo no incluye `.api-token`, otros secretos ni el binario del servidor.
 
+`systemd/bedrock.service` ejecuta Bedrock directamente mediante systemd. No utiliza `screen`: en la VM de Azure el modo anterior dejaba el proceso activo sin aceptar clientes por el puerto configurado después de la prueba de restauración. La ejecución directa ya se validó al abrir la restauración aislada y permite que los registros y el estado del proceso sean observables por systemd.
+
 La herramienta solo crea el archivo cuando `bedrock.service` y `bedrock_server` no están activos. **Por sí misma no detiene ni reinicia el servidor**. El operador debe garantizar que siga detenido durante toda la copia; el programa comprueba el estado antes y después. El 22 de octubre de 2026 se usó sobre producción dentro de una ventana de mantenimiento autorizada, mediante `production_backup.py`, que detuvo Bedrock, creó y verificó el archivo, e inició el servicio de nuevo antes de subirlo a R2.
 
 Ejemplo para un servidor detenido, sujeto a una ventana de mantenimiento autorizada:
