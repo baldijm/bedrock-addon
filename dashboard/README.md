@@ -45,3 +45,5 @@ npm run lint
 ```
 
 Para el despliegue se deben aplicar las migraciones D1 y configurar los tres secretos antes de exponer la URL. El primer despliegue y cualquier posterior activación de producción requieren una autorización explícita.
+
+Después de publicar una nueva versión del Worker, comprobar que los tres secretos siguen presentes en la versión activa. Si se vuelve a cargar alguno con Wrangler, hacerlo después de `wrangler deploy`; los valores nunca se añaden al repositorio ni a `wrangler.jsonc`.
