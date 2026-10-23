@@ -17,7 +17,10 @@ sido probado.
   producción. La API de pruebas, si está activa, escucha sólo en
   `127.0.0.1:3001`, tiene su propia credencial y no guarda datos. Bedrock toma
   esa URL de `config/default/variables.json` y su token de
-  `config/default/secrets.json`; ambos archivos quedan fuera de Git. No
+  `config/default/secrets.json`; ambos archivos quedan fuera de Git. El valor
+  `SPB_ENABLE_API_TEST=true` habilita en staging el comando
+  `/spb:api_test`, que envía únicamente `{ "type": "staging_probe" }` y no
+  datos de jugadores ni del mundo. No
   reutilizar las credenciales ni la API de producción. Esto no es una
   afirmación de salud de producción.
 

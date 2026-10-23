@@ -99,4 +99,36 @@ system.beforeEvents.startup.subscribe(({ customCommandRegistry }) => {
     );
 
     console.warn("[SPB SALDO] Comando registrado");
+
+    // Sólo staging habilita esta variable. Producción no registra una acción
+    // que pueda enviar solicitudes de prueba a su API.
+    if (String(variables.get("SPB_ENABLE_API_TEST")) === "true") {
+        customCommandRegistry.registerCommand(
+            {
+                name: "spb:api_test",
+                description: "Prueba la API aislada de staging",
+                permissionLevel: 0,
+                cheatsRequired: false
+            },
+            (origin) => {
+                const player = origin.sourceEntity;
+                if (!player || player.typeId !== "minecraft:player") {
+                    return {
+                        status: CustomCommandStatus.Failure,
+                        message: "Este comando debe ejecutarlo un jugador."
+                    };
+                }
+                system.run(async () => {
+                    const response = await enviarSPB({ type: "staging_probe" });
+                    player.sendMessage(
+                        response?.ok
+                            ? "[SPB] API de staging respondió correctamente."
+                            : "[SPB] La API de staging no respondió."
+                    );
+                });
+                return { status: CustomCommandStatus.Success };
+            }
+        );
+        console.warn("[SPB API] Comando de prueba de staging registrado");
+    }
 });
