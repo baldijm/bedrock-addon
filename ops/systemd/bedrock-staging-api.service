@@ -1,0 +1,19 @@
+[Unit]
+Description=SPB API for Bedrock staging only
+After=network.target
+
+[Service]
+Type=simple
+User=bedrock
+Group=bedrock
+WorkingDirectory=/opt/bedrock-staging-api
+EnvironmentFile=/etc/bedrock-staging-api/api.env
+ExecStart=/usr/bin/node /opt/bedrock-staging-api/server.js
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

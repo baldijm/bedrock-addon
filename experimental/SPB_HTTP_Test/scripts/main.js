@@ -1,4 +1,4 @@
-import { secrets } from "@minecraft/server-admin";
+import { secrets, variables } from "@minecraft/server-admin";
 import {
     http,
     HttpRequest,
@@ -19,9 +19,10 @@ export async function enviarSPB(datos) {
             return null;
         }
 
-        const request = new HttpRequest(
-            "http://127.0.0.1:3000/spb/test"
-        );
+        // Producción conserva su URL actual si no se configuró una variable.
+        // Staging define SPB_API_URL en config/default/variables.json.
+        const endpoint = variables.get("SPB_API_URL") || "http://127.0.0.1:3000/spb/test";
+        const request = new HttpRequest(String(endpoint));
 
         request.method = HttpRequestMethod.Post;
 

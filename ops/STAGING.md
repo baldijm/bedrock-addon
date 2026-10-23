@@ -13,12 +13,13 @@ sido probado.
   defecto. Se inicia sólo para una sesión de pruebas.
 - El archivo de credencial de producción no se copia a staging y el servicio
   vacía `SPB_API_TOKEN`.
-- El servicio no recibe `SPB_API_TOKEN` y el archivo de credencial de
-  producción no se copia. Como el módulo HTTP no hace una solicitud sin esa
-  credencial, una sesión normal de staging no alcanza la API real. Para probar
-  la integración HTTP se necesita una API y credencial de **staging** separadas;
-  no reutilizar las de producción. Esto no es una afirmación de salud ni una
-  prueba de la API.
+- El servicio no recibe `SPB_API_TOKEN` ni el archivo de credencial de
+  producción. La API de pruebas, si está activa, escucha sólo en
+  `127.0.0.1:3001`, tiene su propia credencial y no guarda datos. Bedrock toma
+  esa URL de `config/default/variables.json` y su token de
+  `config/default/secrets.json`; ambos archivos quedan fuera de Git. No
+  reutilizar las credenciales ni la API de producción. Esto no es una
+  afirmación de salud de producción.
 
 ## Antes de que un jugador entre
 
@@ -49,3 +50,7 @@ sin autorización expresa del operador.
 La integración GitHub -> staging debe usar una credencial de lectura limitada
 (por ejemplo, una deploy key) y un commit explícito. No guardar tokens de
 GitHub, secretos de R2 ni contraseñas en este repositorio.
+
+La API mínima para probar el trayecto HTTP está en `staging-api/server.js` y
+su unidad en `systemd/bedrock-staging-api.service`. Sólo acepta `POST
+/spb/test` con su token de staging y responde sin persistir el cuerpo.
