@@ -16,8 +16,10 @@ sido probado.
 - El servicio no recibe `SPB_API_TOKEN` ni el archivo de credencial de
   producción. La API de pruebas, si está activa, escucha sólo en
   `127.0.0.1:3001`, tiene su propia credencial y no guarda datos. Bedrock toma
-  esa URL de `config/default/variables.json` y su token de
-  `config/default/secrets.json`; ambos archivos quedan fuera de Git. El valor
+  esa URL de `config/fa4cf008-6894-405d-93ca-8c1db6e6f1f5/variables.json` y
+  su token de `config/fa4cf008-6894-405d-93ca-8c1db6e6f1f5/secrets.json`
+  (el UUID del módulo de script de `SPB_HTTP_Test`); ambos archivos quedan
+  fuera de Git. El valor
   `SPB_ENABLE_API_TEST=true` habilita en staging el comando
   `/spb:api_test`, que envía únicamente `{ "type": "staging_probe" }` y no
   datos de jugadores ni del mundo. No

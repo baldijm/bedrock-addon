@@ -1,6 +1,7 @@
 [Unit]
 Description=Minecraft Bedrock Dedicated Server (staging)
-After=network.target
+Requires=bedrock-staging-api.service
+After=network.target bedrock-staging-api.service
 
 [Service]
 Type=simple
