@@ -1,7 +1,7 @@
 import { GameMode, world } from '@minecraft/server';
 import { ActionFormData } from '@minecraft/server-ui';
 import { ModalFormData } from '@minecraft/server-ui';
-import { establecerCreativePlus, establecerPuntosPorEliminacion, obtenerCreativePlus, obtenerPuntosPorEliminacion } from '../../global/configuracion.js';
+import { establecerCreativePlus, establecerPuntosPorEliminacion, establecerPvpActivo, obtenerCreativePlus, obtenerPuntosPorEliminacion, obtenerPvpActivo } from '../../global/configuracion.js';
 import { DURACION_SOLICITUD_PVP_MS, crearSolicitudPvp, obtenerSolicitudesPvp, responderSolicitudPvp } from '../pvp/pvp.js';
 import { hayPartidaArenaActiva, iniciarPartidaArena } from '../games/arenaPvp.js';
 import { DURACION_SOLICITUD_TPA_MS, crearSolicitudTpa, obtenerSolicitudesTpa, responderSolicitudTpa } from '../teleport/tpa.js';
@@ -11,6 +11,7 @@ function esAdministrador(player) {
 }
 export function abrirMenuPrincipal(player) {
     const { puntos, puesto } = obtenerResumenJugador(player);
+    const pvpActivo = obtenerPvpActivo();
     const form = new ActionFormData()
         .title('§lSecret Kingdom')
         .body([
@@ -19,9 +20,10 @@ export function abrirMenuPrincipal(player) {
         `§6Posición global: §f#${puesto}`,
         `§bPuntos: §f${puntos}`
     ].join('\n'))
-        .button('Ranking')
-        .button('PvP')
-        .button('TPA');
+        .button('Ranking');
+    if (pvpActivo)
+        form.button('PvP');
+    form.button('TPA');
     if (esAdministrador(player)) {
         form.button('Settings');
         form.button('Gamemode');
@@ -31,20 +33,30 @@ export function abrirMenuPrincipal(player) {
         .then((respuesta) => {
         if (respuesta.canceled)
             return;
-        if (respuesta.selection === 0) {
+        let indice = 0;
+        if (respuesta.selection === indice) {
             abrirRanking(player);
+            return;
         }
-        if (respuesta.selection === 1) {
+        indice += 1;
+        if (pvpActivo && respuesta.selection === indice) {
             abrirMenuPvp(player);
+            return;
         }
-        if (respuesta.selection === 2) {
+        if (pvpActivo)
+            indice += 1;
+        if (respuesta.selection === indice) {
             abrirMenuTpa(player);
+            return;
         }
-        if (respuesta.selection === 3 && esAdministrador(player)) {
+        indice += 1;
+        if (respuesta.selection === indice && esAdministrador(player)) {
             abrirMenuSettings(player);
             return;
         }
-        if (respuesta.selection === 4 && esAdministrador(player)) {
+        if (esAdministrador(player))
+            indice += 1;
+        if (respuesta.selection === indice && esAdministrador(player)) {
             abrirMenuGamemode(player);
         }
     })
@@ -92,11 +104,13 @@ function abrirMenuSettings(player) {
         return;
     const puntosActuales = obtenerPuntosPorEliminacion();
     const creativePlusActivo = obtenerCreativePlus();
+    const pvpActivo = obtenerPvpActivo();
     new ActionFormData()
         .title('§f§lSettings')
         .body('§fAdministra la configuración global del servidor.')
         .button(`§fPuntos por kill: §e${puntosActuales}`)
         .button(`§fCreative+: ${creativePlusActivo ? '§aActivo' : '§cInactivo'}`)
+        .button(`§fPvP: ${pvpActivo ? '§aActivo' : '§cInactivo'}`)
         .button('Regresar')
         .show(player)
         .then((respuesta) => {
@@ -113,7 +127,14 @@ function abrirMenuSettings(player) {
             abrirMenuSettings(player);
             return;
         }
-        if (respuesta.selection === 2)
+        if (respuesta.selection === 2) {
+            const nuevoEstado = !pvpActivo;
+            establecerPvpActivo(nuevoEstado);
+            player.sendMessage(`§aPvP ${nuevoEstado ? 'activado' : 'desactivado'}§a.`);
+            abrirMenuSettings(player);
+            return;
+        }
+        if (respuesta.selection === 3)
             abrirMenuPrincipal(player);
     })
         .catch((error) => player.sendMessage(`§cError al guardar settings: ${String(error)}`));
@@ -145,6 +166,10 @@ function abrirEditorPuntosPorEliminacion(player, puntosActuales) {
         .catch((error) => player.sendMessage(`§cError al guardar settings: ${String(error)}`));
 }
 function abrirMenuPvp(player) {
+    if (!obtenerPvpActivo()) {
+        player.sendMessage('§ePvP está desactivado por un administrador.');
+        return;
+    }
     const solicitudes = obtenerSolicitudesPvp(player);
     new ActionFormData()
         .title('§c§lPvP')
@@ -168,6 +193,10 @@ function abrirMenuPvp(player) {
         .catch((error) => player.sendMessage(`§cError al abrir PvP: ${String(error)}`));
 }
 function abrirListaDeRetos(player) {
+    if (!obtenerPvpActivo()) {
+        player.sendMessage('§ePvP está desactivado por un administrador.');
+        return;
+    }
     if (hayPartidaArenaActiva()) {
         player.sendMessage('§eLa arena PvP ya está ocupada por otra partida.');
         return;
@@ -197,6 +226,10 @@ function abrirListaDeRetos(player) {
             return;
         }
         if (!crearSolicitudPvp(player, retadoActual)) {
+            if (!obtenerPvpActivo()) {
+                player.sendMessage('§ePvP fue desactivado antes de enviar el reto.');
+                return;
+            }
             player.sendMessage(`§eYa tienes una solicitud activa para §f${retadoActual.name}§e.`);
             return;
         }
@@ -207,6 +240,10 @@ function abrirListaDeRetos(player) {
         .catch((error) => player.sendMessage(`§cError al elegir rival: ${String(error)}`));
 }
 function abrirSolicitudesPvp(player) {
+    if (!obtenerPvpActivo()) {
+        player.sendMessage('§ePvP está desactivado por un administrador.');
+        return;
+    }
     const solicitudes = obtenerSolicitudesPvp(player);
     const form = new ActionFormData()
         .title('§e§lSolicitudes de PvP')
@@ -232,6 +269,10 @@ function abrirSolicitudesPvp(player) {
         .catch((error) => player.sendMessage(`§cError al abrir solicitudes: ${String(error)}`));
 }
 function abrirRespuestaSolicitud(retado, retadorNombre) {
+    if (!obtenerPvpActivo()) {
+        retado.sendMessage('§ePvP está desactivado por un administrador.');
+        return;
+    }
     new ActionFormData()
         .title('§c§lReto de PvP')
         .body(`§f${retadorNombre} §fquiere combatir contigo.`)
@@ -242,6 +283,10 @@ function abrirRespuestaSolicitud(retado, retadorNombre) {
         .then((respuesta) => {
         if (respuesta.canceled)
             return;
+        if (!obtenerPvpActivo()) {
+            retado.sendMessage('§ePvP fue desactivado antes de responder el reto.');
+            return;
+        }
         if (respuesta.selection === 2) {
             abrirSolicitudesPvp(retado);
             return;

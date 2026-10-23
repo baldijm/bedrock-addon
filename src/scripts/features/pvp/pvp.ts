@@ -1,4 +1,5 @@
 import { Player, system, world } from '@minecraft/server';
+import { obtenerPvpActivo } from '../../global/configuracion.js';
 
 export const DURACION_SOLICITUD_PVP_MS = 60_000;
 
@@ -34,6 +35,7 @@ export function limpiarSolicitudesPvp(): void {
 export function crearSolicitudPvp(retador: Player, retado: Player): boolean {
   limpiarSolicitudesPvp();
 
+  if (!obtenerPvpActivo()) return false;
   if (retador.name === retado.name) return false;
 
   const solicitudes = solicitudesPorRetado.get(retado.name) ?? new Map<string, SolicitudPvp>();

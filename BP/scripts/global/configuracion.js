@@ -1,6 +1,7 @@
 import { world } from '@minecraft/server';
 const PROPIEDAD_PUNTOS_ELIMINACION = 'spb:puntos_eliminacion';
 const PROPIEDAD_CREATIVE_PLUS = 'spb:creative_plus';
+const PROPIEDAD_PVP_ACTIVO = 'spb:pvp_activo';
 const PUNTOS_ELIMINACION_PREDETERMINADOS = 10;
 /** Devuelve los puntos que recibe un jugador al conseguir una eliminación. */
 export function obtenerPuntosPorEliminacion() {
@@ -24,5 +25,13 @@ export function obtenerCreativePlus() {
 /** Guarda el estado de Creative+ en el mundo para conservarlo entre reinicios. */
 export function establecerCreativePlus(activo) {
     world.setDynamicProperty(PROPIEDAD_CREATIVE_PLUS, activo);
+}
+/** PvP se mantiene activo por defecto para no cambiar mundos ya existentes. */
+export function obtenerPvpActivo() {
+    return world.getDynamicProperty(PROPIEDAD_PVP_ACTIVO) !== false;
+}
+/** Guarda si los jugadores pueden iniciar retos PvP nuevos. */
+export function establecerPvpActivo(activo) {
+    world.setDynamicProperty(PROPIEDAD_PVP_ACTIVO, activo);
 }
 //# sourceMappingURL=configuracion.js.map

@@ -9,6 +9,7 @@ import {
   world,
 } from '@minecraft/server';
 import { ActionFormData } from '@minecraft/server-ui';
+import { obtenerPvpActivo } from '../../global/configuracion.js';
 
 const DIMENSION_ARENA = 'minecraft:overworld';
 const NOMBRE_TICKING_AREA_ARENA = 'spb_arena';
@@ -412,7 +413,7 @@ function abrirMenuNpc(player: Player): void {
 
 /** Inicia la sesión de arena inmediatamente después de aceptar una solicitud PvP. */
 export function iniciarPartidaArena(retador: Player, retado: Player): boolean {
-  if (partida) return false;
+  if (!obtenerPvpActivo() || partida) return false;
   partida = {
     p1Id: retador.id,
     p2Id: retado.id,

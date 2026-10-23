@@ -1,5 +1,6 @@
 import { BlockTypes, GameMode, InputPermissionCategory, ItemStack, system, world, } from '@minecraft/server';
 import { ActionFormData } from '@minecraft/server-ui';
+import { obtenerPvpActivo } from '../../global/configuracion.js';
 const DIMENSION_ARENA = 'minecraft:overworld';
 const NOMBRE_TICKING_AREA_ARENA = 'spb_arena';
 const ESPERA_ENTRE_RONDAS_TICKS = 20 * 5;
@@ -356,7 +357,7 @@ function abrirMenuNpc(player) {
 }
 /** Inicia la sesión de arena inmediatamente después de aceptar una solicitud PvP. */
 export function iniciarPartidaArena(retador, retado) {
-    if (partida)
+    if (!obtenerPvpActivo() || partida)
         return false;
     partida = {
         p1Id: retador.id,
