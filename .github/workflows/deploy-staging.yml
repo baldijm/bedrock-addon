@@ -7,8 +7,6 @@ on:
       - BP/**
       - RP/**
       - experimental/SPB_HTTP_Test/**
-      - ops/addon_deploy.py
-      - .github/workflows/deploy-staging.yml
   workflow_dispatch:
     inputs:
       commit:

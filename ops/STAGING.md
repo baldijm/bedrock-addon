@@ -81,6 +81,10 @@ repositorio de GitHub (no a los archivos del repo):
 - `BEDROCK_STAGING_SSH_KEY`: clave privada exclusiva para ese automatismo,
   limitada en Azure al usuario que ejecuta el despliegue y rotada si se expone.
 
+Los cambios a las herramientas en `ops/` no reinician staging automáticamente:
+se instalan de forma deliberada con `install_deploy_tools.sh` y se validan antes
+de usarse. Así un cambio operativo no se mezcla con una actualización de juego.
+
 El workflow de producción **no** se ejecuta con un push. Sólo se puede iniciar
 manualmente con un SHA, la frase exacta de autorización y la protección del
 entorno `production` de GitHub. Además, el programa exige el flag
