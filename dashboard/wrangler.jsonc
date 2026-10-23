@@ -1,0 +1,21 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "spb-console",
+	"compatibility_date": "2026-10-23",
+	"compatibility_flags": ["nodejs_als"],
+	"main": ".svelte-kit/cloudflare/_worker.js",
+	"assets": {
+		"binding": "ASSETS",
+		"directory": ".svelte-kit/cloudflare"
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "spb-console",
+			"database_id": "0f9568ae-a086-4674-9918-e335c14d5149",
+			"migrations_dir": "migrations"
+		}
+	],
+	"workers_dev": true,
+	"preview_urls": true
+}

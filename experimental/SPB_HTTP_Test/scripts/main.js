@@ -5,6 +5,13 @@ import {
     HttpRequestMethod,
     HttpHeader
 } from "@minecraft/server-net";
+import {
+    world,
+    system,
+    EntityComponentTypes,
+    CustomCommandParamType,
+    CustomCommandStatus
+} from "@minecraft/server";
 
 /**
  * Envía información del servidor Minecraft a la API local.
@@ -50,10 +57,78 @@ export async function enviarSPB(datos) {
     }
 }
 
+/**
+ * Puente de consola: staging consulta una orden pendiente y devuelve el
+ * resultado. Sólo se activa con variables privadas de staging; producción no
+ * registra ni ejecuta este ciclo.
+ */
+async function solicitudConsola(ruta, datos) {
+    try {
+        const token = secrets.get("SPB_CONSOLE_TOKEN");
+        const base = variables.get("SPB_CONSOLE_API_URL");
+        if (!token || !base) {
+            console.error("[SPB CONSOLA] Credencial o URL no disponibles");
+            return null;
+        }
+
+        const request = new HttpRequest(String(base).replace(/\\/$/, "") + ruta);
+        request.method = HttpRequestMethod.Post;
+        request.headers = [
+            new HttpHeader("Content-Type", "application/json"),
+            new HttpHeader("Authorization", "Bearer " + token)
+        ];
+        request.body = JSON.stringify(datos || {});
+
+        const response = await http.request(request);
+        if (response.status !== 200) {
+            console.error("[SPB CONSOLA] API rechazó la solicitud. HTTP " + response.status);
+            return null;
+        }
+        return JSON.parse(response.body);
+    } catch (error) {
+        console.error("[SPB CONSOLA] Error de comunicación: " + String(error));
+        return null;
+    }
+}
+
+let consolaOcupada = false;
+
+async function procesarConsolaStaging() {
+    if (consolaOcupada) return;
+    consolaOcupada = true;
+    try {
+        const respuesta = await solicitudConsola("/internal/staging/next");
+        const orden = respuesta?.command;
+        if (!orden?.id || !orden?.command) return;
+
+        let ok = true;
+        let resultado = "";
+        try {
+            const ejecucion = world.getDimension("minecraft:overworld").runCommand(String(orden.command));
+            resultado = ejecucion.statusMessage || "Comando ejecutado. Afectados: " + ejecucion.successCount;
+        } catch (error) {
+            ok = false;
+            resultado = String(error);
+        }
+
+        await solicitudConsola("/internal/staging/result/" + encodeURIComponent(String(orden.id)), {
+            ok,
+            result: resultado
+        });
+    } finally {
+        consolaOcupada = false;
+    }
+}
+
 
 console.warn("[SPB API] Módulo de comunicación cargado");
 
-import { world, system, EntityComponentTypes, CustomCommandParamType, CustomCommandStatus } from "@minecraft/server";
+if (String(variables.get("SPB_ENABLE_CONSOLE")) === "true") {
+    system.runInterval(() => {
+        void procesarConsolaStaging();
+    }, 100);
+    console.warn("[SPB CONSOLA] Puente de consola de staging habilitado");
+}
 
 system.beforeEvents.startup.subscribe(({ customCommandRegistry }) => {
     customCommandRegistry.registerCommand(
