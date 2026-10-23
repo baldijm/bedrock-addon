@@ -19,7 +19,12 @@ MANIFEST = "backup-manifest.json"
 
 
 def ensure_stopped():
-    """Comprueba servicio y proceso. No detiene ni reinicia Minecraft."""
+    """Comprueba exclusivamente el servicio de producción.
+
+    Staging puede ejecutar otro proceso ``bedrock_server`` en la misma VM, por
+    lo que nunca se debe usar un ``pgrep`` global como señal de que producción
+    sigue activa.
+    """
     if shutil.which("systemctl"):
         active = subprocess.run(
             ["systemctl", "is-active", "--quiet", "bedrock.service"],
@@ -27,18 +32,6 @@ def ensure_stopped():
         )
         if active.returncode == 0:
             raise RuntimeError("bedrock.service sigue activo")
-
-    if not shutil.which("pgrep"):
-        raise RuntimeError("No se puede comprobar el proceso: falta pgrep")
-    running = subprocess.run(
-        ["pgrep", "-x", "bedrock_server"],
-        check=False,
-        stdout=subprocess.DEVNULL,
-    )
-    if running.returncode == 0:
-        raise RuntimeError("bedrock_server sigue ejecutándose")
-    if running.returncode != 1:
-        raise RuntimeError("No se pudo comprobar el proceso Bedrock")
 
 
 def sha256_file(path):

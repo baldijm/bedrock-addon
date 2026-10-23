@@ -28,11 +28,25 @@ def service_running():
     active = subprocess.run(
         ["systemctl", "is-active", "--quiet", "bedrock.service"], check=False
     ).returncode == 0
-    process = subprocess.run(
-        ["pgrep", "-x", "bedrock_server"],
-        check=False, stdout=subprocess.DEVNULL
-    ).returncode == 0
-    return active and process
+    if not active:
+        return False
+
+    # Staging usa el mismo ejecutable. Consultar todos los procesos por nombre
+    # permitiría que staging hiciera pasar a producción por sana.
+    result = subprocess.run(
+        ["systemctl", "show", "bedrock.service", "--property=MainPID", "--value"],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    try:
+        pid = int(result.stdout.strip())
+    except ValueError:
+        return False
+    if result.returncode != 0 or pid <= 0:
+        return False
+
+    return Path(f"/proc/{pid}/comm").read_text().strip() == "bedrock_server"
 
 
 def run_service(action, timeout):
