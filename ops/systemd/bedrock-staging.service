@@ -11,12 +11,12 @@ WorkingDirectory=/opt/bedrock-staging
 Environment=LD_LIBRARY_PATH=/opt/bedrock-staging
 # A staging deployment must not receive the production API credential.
 Environment=SPB_API_TOKEN=
-ExecStart=/opt/bedrock-staging/bedrock_server
+EnvironmentFile=/etc/bedrock-staging-console/bridge.env
+ExecStart=/usr/local/lib/spb/bedrock-console-bridge.py --root /opt/bedrock-staging --listen 127.0.0.1:3002
 Restart=on-failure
 RestartSec=10
 TimeoutStopSec=70
-KillSignal=SIGINT
-KillMode=control-group
+KillMode=mixed
 LimitNOFILE=1048576
 # The experimental HTTP pack only runs when its credential exists.  Keep the
 # production credential out of this directory; use a separate staging API if

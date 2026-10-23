@@ -1,39 +1,40 @@
 # Consola de SPB
 
-Consola web privada para enviar comandos de Minecraft Bedrock al entorno de **staging**. Es una aplicación SvelteKit desplegable en Cloudflare Workers, con Cloudflare D1 como cola y registro de resultados.
+Consola web privada para enviar comandos de Minecraft Bedrock al entorno de **staging**. Es una aplicación SvelteKit desplegable en Cloudflare Workers. El Worker se comunica con un bridge local mediante Cloudflare Tunnel y un secreto independiente de alta entropía.
 
 No se conecta por SSH al servidor, no ejecuta comandos de Linux y no incluye ninguna ruta ni credencial de producción.
 
 ## Flujo
 
-1. El administrador abre la consola web y escribe un comando normal de Minecraft (por ejemplo, `list` o `say hola`).
-2. El Worker lo guarda en la cola D1 como una orden de `staging`.
-3. El add-on instalado **sólo en staging** consulta la siguiente orden cada cinco segundos.
-4. Bedrock ejecuta el texto mediante Script API y el add-on devuelve el resultado a la consola.
+1. El administrador inicia sesión en la consola web y escribe un comando normal de Minecraft (por ejemplo, `list` o `say hola`).
+2. El Worker autentica la llamada ante el bridge de staging con un secreto que nunca llega al navegador.
+3. Cloudflare Tunnel entrega la solicitud al bridge que escucha exclusivamente en `127.0.0.1:3002` de la VM.
+4. El bridge es el proceso padre de `bedrock_server`: escribe el comando en su entrada estándar y expone las últimas líneas reales de su salida.
 
-La consola usa texto libre: no existe un registro artificial de comandos permitidos. Aun así, el alcance real es el que soporte `runCommand` en Bedrock, no una terminal del sistema operativo.
+La consola usa texto libre: no existe un registro artificial de comandos permitidos. Aun así, el alcance real es el de los comandos de la consola de Bedrock, no una terminal del sistema operativo. La confirmación de entrega no es una afirmación de que un comando haya surtido el efecto esperado dentro del juego; la salida real del servidor es la evidencia disponible.
 
 ## Recursos Cloudflare
 
 - Worker: `spb-console`.
-- D1: `spb-console` (`0f9568ae-a086-4674-9918-e335c14d5149`).
-- Esquema de D1: `migrations/0001_console.sql`.
+- D1: `spb-console` (`0f9568ae-a086-4674-9918-e335c14d5149`), conservado para una futura bitácora administrativa.
+- Tunnel: `spb-staging-console`, con hostname `staging-bridge.baldijm.com`.
+- El hostname es únicamente la entrada del túnel; el navegador nunca recibe el secreto del bridge. Este bridge también rechaza llamadas sin el secreto y escucha sólo en loopback.
 
 El Worker requiere estos secretos, que se guardan en Cloudflare y nunca en Git:
 
 - `ADMIN_PASSWORD`: contraseña del administrador de la consola.
 - `SESSION_SECRET`: secreto aleatorio para firmar la cookie de sesión.
-- `STAGING_SERVER_TOKEN`: secreto aleatorio compartido exclusivamente entre el Worker y el add-on de staging.
+- `STAGING_SERVER_TOKEN`: secreto del mecanismo temporal de cola del add-on; no se usa por el bridge.
+- `STAGING_BRIDGE_URL`: `https://staging-bridge.baldijm.com`.
+- `STAGING_BRIDGE_TOKEN`: secreto aleatorio compartido sólo entre Worker y bridge.
 
 ## Activar staging después del despliegue
 
-Una vez que exista una URL HTTPS funcional para el Worker, se configura únicamente en el servidor de staging:
+El bridge se instala exclusivamente en staging con `ops/install_console_bridge.sh`. Su secreto vive fuera de Git en `/etc/bedrock-staging-console/bridge.env` con permiso `0600` y la unidad de systemd permanece deliberadamente sin tocar en producción.
 
-- Variable `SPB_ENABLE_CONSOLE=true`.
-- Variable `SPB_CONSOLE_API_URL=https://<url-de-la-consola>`.
-- Secreto `SPB_CONSOLE_TOKEN`, con el mismo valor que `STAGING_SERVER_TOKEN`.
+El conector saliente de Cloudflare se instala con `ops/install_cloudflared_tunnel.sh`; su token vive en `/etc/cloudflared/spb-staging-bridge.env` con permiso `0640` y grupo `cloudflared`. No se abre ningún puerto adicional en Azure. Si más adelante se habilita Cloudflare Access sin aceptar un plan que autorice cargos, puede añadirse como una capa adicional; no es requisito para que el bridge rechace accesos no autorizados.
 
-La configuración vive fuera del repositorio en la ruta de configuración del módulo indicada por `ops/STAGING.md`. Producción debe conservar `SPB_ENABLE_CONSOLE` ausente o distinto de `true`.
+El mecanismo anterior basado en el add-on queda desactivado en staging una vez que se comprueba el bridge. Producción debe conservar `SPB_ENABLE_CONSOLE` ausente o distinto de `true`.
 
 ## Desarrollo y verificación
 

@@ -1,14 +1,18 @@
 import type { RequestHandler } from './$types';
-import { database, isAuthenticated, json, unauthorized } from '#lib/server/auth';
+import { isAuthenticated, json, unauthorized } from '#lib/server/auth';
+import { bridgeRequest } from '#lib/server/bridge';
 
 export const GET: RequestHandler = async ({ request }) => {
 	if (!(await isAuthenticated(request))) return unauthorized();
-	const result = await database()
-		.prepare(
-			'SELECT id, command, status, created_at AS createdAt, completed_at AS completedAt, result FROM commands ORDER BY created_at DESC LIMIT 40'
-		)
-		.all();
-	return json({ commands: result.results });
+	try {
+		const [health, logs] = await Promise.all([bridgeRequest('/health'), bridgeRequest('/logs?after=0')]);
+		return json({ health, logs });
+	} catch (error) {
+		return json(
+			{ error: error instanceof Error ? error.message : 'No se pudo consultar la consola.' },
+			503
+		);
+	}
 };
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -18,13 +22,17 @@ export const POST: RequestHandler = async ({ request }) => {
 	command = command.replace(/^\/+/, '');
 	if (!command || command.length > 512 || /[\r\n\0]/.test(command))
 		return json({ error: 'El comando debe ocupar una sola línea de hasta 512 caracteres.' }, 400);
-	const id = crypto.randomUUID();
-	const now = new Date().toISOString();
-	await database()
-		.prepare(
-			'INSERT INTO commands (id, environment, command, status, created_at) VALUES (?, ?, ?, ?, ?)'
-		)
-		.bind(id, 'staging', command, 'queued', now)
-		.run();
-	return json({ id, status: 'queued' }, 201);
+	try {
+		const result = await bridgeRequest('/commands', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ command })
+		});
+		return json(result, 202);
+	} catch (error) {
+		return json(
+			{ error: error instanceof Error ? error.message : 'No se pudo entregar el comando.' },
+			503
+		);
+	}
 };

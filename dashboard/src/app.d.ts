@@ -6,6 +6,8 @@ declare global {
 		ADMIN_PASSWORD: string;
 		SESSION_SECRET: string;
 		STAGING_SERVER_TOKEN: string;
+		STAGING_BRIDGE_URL: string;
+		STAGING_BRIDGE_TOKEN: string;
 	}
 
 	namespace App {

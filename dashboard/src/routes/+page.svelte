@@ -1,13 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 
-	type Command = {
-		id: string;
-		command: string;
-		status: 'queued' | 'running' | 'completed' | 'failed';
-		createdAt: string;
-		completedAt: string | null;
-		result: string | null;
+	type ConsoleLine = {
+		id: number;
+		at: string;
+		text: string;
 	};
 
 	let authenticated = $state(false);
@@ -16,7 +13,8 @@
 	let command = $state('');
 	let error = $state('');
 	let sending = $state(false);
-	let history = $state<Command[]>([]);
+	let logs = $state<ConsoleLine[]>([]);
+	let bedrockRunning = $state(false);
 
 	async function api(path: string, options: RequestInit = {}) {
 		const response = await fetch(path, {
@@ -31,7 +29,8 @@
 	async function refresh() {
 		try {
 			const body = await api('/api/commands');
-			history = body.commands;
+			logs = body.logs.lines;
+			bedrockRunning = body.health.bedrockRunning === true;
 			authenticated = true;
 			error = '';
 		} catch {
@@ -70,7 +69,8 @@
 	async function signOut() {
 		await api('/api/logout', { method: 'POST' });
 		authenticated = false;
-		history = [];
+			logs = [];
+			bedrockRunning = false;
 	}
 
 	onMount(() => {
@@ -113,7 +113,7 @@
 				<p class="eyebrow">SPB · CONSOLA</p>
 				<h1>Staging</h1>
 			</div>
-			<div class="badge">Sólo pruebas</div>
+			<div class:online={bedrockRunning} class="badge">{bedrockRunning ? 'En línea' : 'Sin conexión'}</div>
 			<button class="ghost" onclick={() => void signOut()}>Salir</button>
 		</header>
 
@@ -134,34 +134,19 @@
 		</section>
 
 		{#if error}<p class="error">{error}</p>{/if}
-		<section class="history">
+		<section class="history" aria-live="polite">
 			<div class="section-title">
-				<h2>Actividad reciente</h2>
-				<span>Actualiza automáticamente</span>
+				<h2>Salida real del servidor</h2>
+				<span>Últimas {logs.length} líneas · actualiza automáticamente</span>
 			</div>
-			{#if history.length === 0}
-				<p class="empty">Aún no hay comandos enviados.</p>
+			{#if logs.length === 0}
+				<p class="empty">Aún no hay salida disponible del servidor.</p>
 			{:else}
-				{#each history as item (item.id)}
-					<article>
-						<div>
-							<code>{item.command}</code><small>{new Date(item.createdAt).toLocaleString()}</small>
-						</div>
-						<div
-							class:pending={item.status === 'queued' || item.status === 'running'}
-							class="status"
-						>
-							{item.status === 'queued'
-								? 'En cola'
-								: item.status === 'running'
-									? 'Ejecutando'
-									: item.status === 'failed'
-										? 'Error'
-										: 'Listo'}
-						</div>
-						{#if item.result}<pre>{item.result}</pre>{/if}
-					</article>
-				{/each}
+				<div class="log-output">
+					{#each logs as line (line.id)}
+						<div><time>{new Date(line.at).toLocaleTimeString()}</time><code>{line.text}</code></div>
+					{/each}
+				</div>
 			{/if}
 		</section>
 	</main>
@@ -260,6 +245,10 @@
 		font-size: 0.82rem;
 		font-weight: 700;
 	}
+	.badge.online {
+		color: #b9ed9d;
+		background: #17351c;
+	}
 	.ghost {
 		background: transparent;
 		border: 1px solid #53604e;
@@ -313,37 +302,31 @@
 		margin: 0 0 16px;
 		font-size: 1.05rem;
 	}
-	article {
+	.log-output {
+		max-height: 480px;
+		overflow: auto;
+		background: #0e120d;
+		border: 1px solid #303a2d;
+		border-radius: 8px;
+		padding: 10px;
+	}
+	.log-output div {
 		display: grid;
-		grid-template-columns: 1fr auto;
-		gap: 8px;
-		padding: 13px 0;
-		border-top: 1px solid #303a2d;
+		grid-template-columns: auto 1fr;
+		gap: 10px;
+		padding: 3px 0;
 	}
-	article code {
-		display: block;
-		word-break: break-word;
-	}
-	article small {
-		display: block;
-		margin-top: 4px;
-	}
-	.status {
-		color: #a9d38f;
-		font-weight: 700;
-		font-size: 0.85rem;
-	}
-	.status.pending {
-		color: #ffd17d;
-	}
-	pre {
-		grid-column: 1 / -1;
-		margin: 0;
-		white-space: pre-wrap;
-		color: #cbd6c4;
+	.log-output time {
+		color: #78926c;
 		font:
 			0.84rem ui-monospace,
 			monospace;
+	}
+	.log-output code {
+		white-space: pre-wrap;
+		word-break: break-word;
+		color: #cbd6c4;
+		font: 0.84rem ui-monospace, monospace;
 	}
 	.error {
 		color: #ffc0b5;
