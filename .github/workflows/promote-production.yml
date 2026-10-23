@@ -1,0 +1,36 @@
+name: Promover a producción
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: SHA completo que ya se probó en staging
+        required: true
+        type: string
+      authorization:
+        description: Escribe I_AUTHORIZE_PRODUCTION_MAINTENANCE para abrir la ventana
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  promote:
+    if: inputs.authorization == 'I_AUTHORIZE_PRODUCTION_MAINTENANCE'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Preparar clave SSH temporal
+        env:
+          SSH_KEY: ${{ secrets.BEDROCK_STAGING_SSH_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/bedrock-production
+          chmod 600 ~/.ssh/bedrock-production
+      - name: Respaldar y promover el commit autorizado
+        env:
+          HOST: ${{ secrets.BEDROCK_STAGING_HOST }}
+          REQUESTED_COMMIT: ${{ inputs.commit }}
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -i ~/.ssh/bedrock-production "azureuser@$HOST" \
+            "sudo /opt/bedrock-deploy/addon_deploy.py production --commit '$REQUESTED_COMMIT' --authorized-production-maintenance"

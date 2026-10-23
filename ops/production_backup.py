@@ -117,7 +117,13 @@ def create_during_maintenance(path):
 
 def upload_and_restore(path, expected_sha256, environment):
     tag = f"spb-world-{uuid.uuid4().hex}"
-    r2_lab.run_restic(environment, "backup", "--tag", tag, "--host", "bedrock-01", str(path))
+    r2_lab.run_restic(
+        environment,
+        "backup",
+        "--tag", "spb-world",
+        "--tag", tag,
+        "--host", "bedrock-01", str(path),
+    )
     snapshots = json.loads(r2_lab.run_restic(environment, "snapshots", "--json", "--tag", tag))
     if len(snapshots) != 1:
         raise RuntimeError("No se encontró exactamente un snapshot del archivo de mundo")

@@ -9,6 +9,13 @@ La herramienta solo crea el archivo cuando `bedrock.service` y `bedrock_server` 
 Para el entorno separado de pruebas y las reglas que impiden confundirlo con
 producción, consultar [STAGING.md](STAGING.md).
 
+Para instalar la automatización de add-ons en la VM, copiar juntos
+`addon_deploy.py`, `world_backup.py`, `production_backup.py` y `r2_lab.py` a
+`/opt/bedrock-deploy/`, con dueño `root` y permisos no editables por el usuario
+del servidor. El script acepta sólo un SHA completo; no despliega ramas móviles.
+La promoción de producción incorpora el mismo respaldo cifrado y verificado de
+este documento, y exige una autorización explícita adicional.
+
 Ejemplo para un servidor detenido, sujeto a una ventana de mantenimiento autorizada:
 
 ```sh

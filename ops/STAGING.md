@@ -8,9 +8,16 @@ sido probado.
 ## Aislamiento actual
 
 - Directorio: `/opt/bedrock-staging`.
-- Puerto Bedrock: UDP `19134` (IPv6 `19135`).
-- Servicio: `bedrock-staging.service`; queda deshabilitado y apagado por
-  defecto. Se inicia sólo para una sesión de pruebas.
+- Puerto Bedrock: `19134` (IPv6 `19135`). Azure debe permitir **UDP y TCP
+  19134** mientras se pruebe. La captura de red confirmó llegada de UDP; la
+  entrada que finalmente funcionó ocurrió cuando también se permitió TCP. No
+  se ha hecho una prueba controlada que demuestre cuál protocolo exige el
+  cliente, así que se conservan ambos mientras funciona.
+- `enable-lan-visibility=false` en las propiedades de staging evita anunciar
+  por LAN dos servidores Bedrock en la misma VM. No cambia producción.
+- Servicio: `bedrock-staging.service`, con `bedrock-staging-api.service` como
+  dependencia. Puede estar activo para pruebas; no tiene que afectar
+  `bedrock.service`.
 - El archivo de credencial de producción no se copia a staging y el servicio
   vacía `SPB_API_TOKEN`.
 - El servicio no recibe `SPB_API_TOKEN` ni el archivo de credencial de
@@ -50,11 +57,44 @@ sido probado.
 No se ejecuta `--apply`, no se reinicia ni se detiene producción por este flujo
 sin autorización expresa del operador.
 
+## Automatización GitHub → staging
+
+`addon_deploy.py` sólo acepta un SHA completo de 40 caracteres. Obtiene ese
+objeto exacto desde `https://github.com/baldijm/bedrock-addon.git`, valida los
+tres paquetes (`BP`, `RP` y `experimental/SPB_HTTP_Test`), conserva las copias
+anteriores como rollback y reemplaza únicamente esos paquetes. No toca mundos,
+credenciales ni configuración de staging. Al final reinicia **sólo** staging y
+escribe un recibo local con el commit desplegado.
+
+En la VM se instala en `/opt/bedrock-deploy` junto con `world_backup.py`,
+`production_backup.py` y `r2_lab.py`. Ejemplo de despliegue manual a staging:
+
+```sh
+sudo /opt/bedrock-deploy/addon_deploy.py staging --commit <SHA_COMPLETO>
+```
+
+El workflow `deploy-staging.yml` hace lo mismo automáticamente para cambios de
+paquetes que lleguen a `main`. Antes de habilitarlo, agregar estos secretos al
+repositorio de GitHub (no a los archivos del repo):
+
+- `BEDROCK_STAGING_HOST`: IP o nombre DNS de la VM.
+- `BEDROCK_STAGING_SSH_KEY`: clave privada exclusiva para ese automatismo,
+  limitada en Azure al usuario que ejecuta el despliegue y rotada si se expone.
+
+El workflow de producción **no** se ejecuta con un push. Sólo se puede iniciar
+manualmente con un SHA, la frase exacta de autorización y la protección del
+entorno `production` de GitHub. Además, el programa exige el flag
+`--authorized-production-maintenance`, exige que ese SHA sea el último
+desplegado en staging, realiza un respaldo de mundo verificable y sólo entonces
+detiene, actualiza y vuelve a iniciar producción. Una falla al subir el respaldo
+a R2 deja producción iniciada y conserva el archivo local; se debe investigar,
+no reintentar a ciegas.
+
 ## Pendiente deliberado
 
-La integración GitHub -> staging debe usar una credencial de lectura limitada
-(por ejemplo, una deploy key) y un commit explícito. No guardar tokens de
-GitHub, secretos de R2 ni contraseñas en este repositorio.
+La VM descarga por HTTPS el commit explícito. Si el repositorio se vuelve
+privado, usar una deploy key de **solo lectura** limitada a este repositorio;
+no guardar tokens de GitHub, secretos de R2 ni contraseñas en este repositorio.
 
 La API mínima para probar el trayecto HTTP está en `staging-api/server.js` y
 su unidad en `systemd/bedrock-staging-api.service`. Sólo acepta `POST
