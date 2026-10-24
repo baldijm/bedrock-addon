@@ -51,6 +51,42 @@ def read_level_name(root: Path) -> str:
     raise RuntimeError("No se encontró un nombre de mundo válido.")
 
 
+def replace_level_name(root: Path, name: str) -> str:
+    """Atomically change the active world name and return the original file."""
+    properties = root / "server.properties"
+    if properties.is_symlink() or not properties.is_file():
+        raise RuntimeError("Falta server.properties o no es un archivo seguro.")
+    original = properties.read_text(encoding="utf-8")
+    lines = original.splitlines()
+    replacements = 0
+    updated: list[str] = []
+    for line in lines:
+        if line.startswith("level-name="):
+            updated.append(f"level-name={name}")
+            replacements += 1
+        else:
+            updated.append(line)
+    if replacements != 1:
+        raise RuntimeError("server.properties debe contener exactamente un level-name.")
+    temporary = properties.with_name(f".{properties.name}.promotion.tmp")
+    try:
+        temporary.write_text("\n".join(updated) + "\n", encoding="utf-8")
+        os.replace(temporary, properties)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return original
+
+
+def restore_properties(root: Path, original: str) -> None:
+    properties = root / "server.properties"
+    temporary = properties.with_name(f".{properties.name}.promotion-rollback.tmp")
+    try:
+        temporary.write_text(original, encoding="utf-8")
+        os.replace(temporary, properties)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def world_path(root: Path, name: str) -> Path:
     worlds = root / "worlds"
     path = worlds / name
@@ -93,12 +129,12 @@ def stop_service(name: str) -> None:
     run("/bin/systemctl", "stop", name, timeout=120)
 
 
-def rollback_world(target: Path, archived: Path) -> None:
+def rollback_world(replacement: Path, target: Path, archived: Path) -> None:
     if not archived.exists():
         return
-    if target.exists():
-        validate_tree(target)
-        shutil.rmtree(target)
+    if replacement.exists():
+        validate_tree(replacement)
+        shutil.rmtree(replacement)
     os.replace(archived, target)
 
 
@@ -111,7 +147,9 @@ def main(operation: str) -> int:
     production_stopped = False
     archived_production: Path | None = None
     target: Path | None = None
+    replacement: Path | None = None
     temporary_root: Path | None = None
+    original_properties: str | None = None
 
     try:
         source_name = read_level_name(STAGING_ROOT)
@@ -120,6 +158,9 @@ def main(operation: str) -> int:
         target = world_path(ROOT, target_name)
         target_parent = target.parent
         target_metadata = target_parent.stat()
+        replacement = target_parent / source_name
+        if source_name != target_name and (replacement.exists() or replacement.is_symlink()):
+            raise RuntimeError("Ya existe un mundo de producción con el nombre de staging.")
 
         write_status(
             state="copying-staging-world",
@@ -131,7 +172,7 @@ def main(operation: str) -> int:
         stop_service(STAGING_SERVICE)
         staging_stopped = True
         temporary_root = Path(tempfile.mkdtemp(prefix="promotion-", dir=target_parent))
-        candidate = temporary_root / target_name
+        candidate = temporary_root / source_name
         copy_world(source, candidate)
         start_service(STAGING_SERVICE)
         staging_stopped = False
@@ -166,16 +207,18 @@ def main(operation: str) -> int:
         if archived_production.exists() or archived_production.is_symlink():
             raise RuntimeError("Ya existe el rollback local de esta promoción.")
         os.replace(target, archived_production)
-        os.replace(candidate, target)
-        chown_tree(target, target_metadata.st_uid, target_metadata.st_gid)
-        target_metadata = target.stat()
-        os.chmod(target, target_metadata.st_mode & 0o777)
+        os.replace(candidate, replacement)
+        chown_tree(replacement, target_metadata.st_uid, target_metadata.st_gid)
+        replacement_metadata = replacement.stat()
+        os.chmod(replacement, replacement_metadata.st_mode & 0o777)
+        original_properties = replace_level_name(ROOT, source_name)
 
         write_status(
             state="starting-production",
             operation=operation,
             sourceWorld=source_name,
-            productionWorld=target_name,
+            productionWorld=source_name,
+            replacedProductionWorld=target_name,
             snapshot=snapshot,
             startedAt=started,
         )
@@ -187,19 +230,22 @@ def main(operation: str) -> int:
             state="complete",
             operation=operation,
             sourceWorld=source_name,
-            productionWorld=target_name,
+            productionWorld=source_name,
+            replacedProductionWorld=target_name,
             snapshot=snapshot,
             backupSha256=backup["sha256"],
             completedAt=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         )
         return 0
     except Exception:
-        if archived_production is not None and target is not None:
+        if archived_production is not None and target is not None and replacement is not None:
             try:
                 if not production_stopped and service_active(PRODUCTION_SERVICE):
                     stop_service(PRODUCTION_SERVICE)
                     production_stopped = True
-                rollback_world(target, archived_production)
+                rollback_world(replacement, target, archived_production)
+                if original_properties is not None:
+                    restore_properties(ROOT, original_properties)
             except Exception:
                 pass
         write_status(
