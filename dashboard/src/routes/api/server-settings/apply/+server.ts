@@ -10,7 +10,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	if (!(await isAuthenticated(request))) return unauthorized();
 	if (isLocalDevelopment()) return json({ ok: true, localDevelopment: true, restarting: false });
 	try {
-		await bridgeRequest('/commands', {
+		await bridgeRequest('staging', '/commands', {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({ command: 'stop' })

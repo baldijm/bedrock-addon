@@ -7,7 +7,7 @@ export const GET: RequestHandler = async ({ request }) => {
 	if (import.meta.env.DEV && process.env.CONSOLE_PASSWORD)
 		return json({ online: null, capacity: null, players: [], source: 'local-development' });
 	try {
-		return json(await bridgeRequest('/players'));
+		return json(await bridgeRequest('staging', '/players'));
 	} catch (error) {
 		return json(
 			{ error: error instanceof Error ? error.message : 'No se pudo consultar a los jugadores.' },

@@ -8,6 +8,8 @@ declare global {
 		STAGING_SERVER_TOKEN: string;
 		STAGING_BRIDGE_URL: string;
 		STAGING_BRIDGE_TOKEN: string;
+		PRODUCTION_OBSERVER_URL: string;
+		PRODUCTION_OBSERVER_TOKEN: string;
 	}
 
 	namespace App {

@@ -1,18 +1,25 @@
 import { env } from 'cloudflare:workers';
 
 type BridgeOptions = RequestInit & { method?: 'GET' | 'POST' };
+export type ServerEnvironment = 'staging' | 'production';
 
-function bridgeUrl(path: string) {
-	const base = env.STAGING_BRIDGE_URL?.replace(/\/+$/, '');
-	if (!base) throw new Error('La consola de staging todavía no está configurada.');
-	return `${base}${path}`;
+function bridgeConfiguration(environment: ServerEnvironment) {
+	if (environment === 'production') {
+		if (!env.PRODUCTION_OBSERVER_URL || !env.PRODUCTION_OBSERVER_TOKEN)
+			throw new Error('El observador de producción todavía no está configurado.');
+		return { base: env.PRODUCTION_OBSERVER_URL, token: env.PRODUCTION_OBSERVER_TOKEN };
+	}
+	if (!env.STAGING_BRIDGE_URL || !env.STAGING_BRIDGE_TOKEN)
+		throw new Error('La consola de staging todavía no está configurada.');
+	return { base: env.STAGING_BRIDGE_URL, token: env.STAGING_BRIDGE_TOKEN };
 }
 
-export async function bridgeRequest(path: string, options: BridgeOptions = {}) {
-	const response = await fetch(bridgeUrl(path), {
+export async function bridgeRequest(environment: ServerEnvironment, path: string, options: BridgeOptions = {}) {
+	const configuration = bridgeConfiguration(environment);
+	const response = await fetch(`${configuration.base.replace(/\/+$/, '')}${path}`, {
 		...options,
 		headers: {
-			Authorization: env.STAGING_BRIDGE_TOKEN,
+			Authorization: configuration.token,
 			...(options.headers ?? {})
 		}
 	});

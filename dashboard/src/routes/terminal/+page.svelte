@@ -23,6 +23,7 @@
 	let logs = $state<ConsoleLine[]>([]);
 	let bedrockRunning = $state(false);
 	let localDevelopment = $state(false);
+	let environment = $state<'staging' | 'production'>('staging');
 
 	function isLocalPreview() {
 		return import.meta.env.DEV && typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('preview');
@@ -37,7 +38,7 @@
 
 	async function refresh() {
 		try {
-			const response = await fetch('/api/commands', { headers: { 'content-type': 'application/json' } });
+			const response = await fetch(`/api/commands?environment=${environment}`, { headers: { 'content-type': 'application/json' } });
 			const body = await response.json().catch(() => ({}));
 			if (response.status === 401) {
 				authenticated = false;
@@ -45,7 +46,7 @@
 			}
 			if (!response.ok) {
 				authenticated = true;
-				error = body.error || 'La sesión está activa, pero staging no respondió.';
+				error = body.error || `La sesión está activa, pero ${environment} no respondió.`;
 				return;
 			}
 			logs = body.logs.lines;
@@ -55,7 +56,7 @@
 			error = '';
 		} catch (reason) {
 			authenticated = true;
-			error = reason instanceof Error ? reason.message : 'La sesión está activa, pero no se pudo contactar staging.';
+			error = reason instanceof Error ? reason.message : `La sesión está activa, pero no se pudo contactar ${environment}.`;
 		} finally {
 			loading = false;
 		}
@@ -83,7 +84,7 @@
 		sending = true;
 		error = '';
 		try {
-			await api('/api/commands', { method: 'POST', body: JSON.stringify({ command }) });
+			await api('/api/commands', { method: 'POST', body: JSON.stringify({ command, environment }) });
 			command = '';
 			await refresh();
 		} catch (reason) {
@@ -91,6 +92,16 @@
 		} finally {
 			sending = false;
 		}
+	}
+
+	function changeEnvironment(value: string) {
+		const next = value === 'production' ? 'production' : 'staging';
+		if (environment === next) return;
+		environment = next;
+		logs = [];
+		error = '';
+		loading = true;
+		void refresh();
 	}
 
 	onMount(() => {
@@ -122,12 +133,12 @@
 		<Card.Root class="w-full max-w-md shadow-xl">
 			<Card.Header class="space-y-3">
 				<div class="flex size-10 items-center justify-center rounded-lg bg-primary text-primary-foreground"><Terminal class="size-5" /></div>
-				<div class="space-y-1"><Card.Title>Consola de SPB</Card.Title><Card.Description>Inicia sesión para administrar únicamente el entorno de staging.</Card.Description></div>
+				<div class="space-y-1"><Card.Title>Consola de SPB</Card.Title><Card.Description>Staging permite comandos; Producción se muestra sólo en lectura.</Card.Description></div>
 			</Card.Header>
 			<Card.Content>
 				<form class="grid gap-4" onsubmit={(event) => { event.preventDefault(); void signIn(); }}>
 					<div class="grid gap-2"><Label for="password">Contraseña</Label><Input id="password" bind:value={password} type="password" autocomplete="current-password" /></div>
-					<Button type="submit" class="w-full">Entrar a staging</Button>
+					<Button type="submit" class="w-full">Entrar a consola</Button>
 				</form>
 				{#if error}<Alert.Root variant="destructive" class="mt-4"><Alert.Title>No se pudo iniciar sesión</Alert.Title><Alert.Description>{error}</Alert.Description></Alert.Root>{/if}
 			</Card.Content>
@@ -137,8 +148,8 @@
 	<main class="dark flex h-svh flex-col overflow-hidden bg-background text-foreground">
 		<header class="flex h-14 shrink-0 items-center gap-3 border-b px-4">
 			<div class="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground"><Terminal class="size-4" /></div>
-			<div class="min-w-0"><p class="truncate text-sm font-medium">Terminal de staging</p><p class="text-xs text-muted-foreground">{localDevelopment ? 'Vista local simulada' : 'Salida real de Bedrock'} · {logs.length} líneas</p></div>
-			<div class="ml-auto flex shrink-0 items-center gap-2"><Badge variant={localDevelopment ? 'outline' : bedrockRunning ? 'default' : 'destructive'}>{localDevelopment ? 'Vista local' : bedrockRunning ? 'En línea' : 'Sin conexión'}</Badge><Button variant="outline" size="sm" href="/"><ArrowLeft /> <span class="hidden sm:inline">Panel</span></Button></div>
+			<div class="min-w-0"><p class="truncate text-sm font-medium">Terminal de {environment === 'production' ? 'producción' : 'staging'}</p><p class="text-xs text-muted-foreground">{localDevelopment ? 'Vista local simulada' : environment === 'production' ? 'Observador de solo lectura' : 'Salida real de Bedrock'} · {logs.length} líneas</p></div>
+			<div class="ml-auto flex shrink-0 items-center gap-2"><select aria-label="Entorno" value={environment} onchange={(event) => changeEnvironment((event.currentTarget as HTMLSelectElement).value)} class="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground"><option value="staging">Staging</option><option value="production">Producción</option></select><Badge variant={localDevelopment ? 'outline' : bedrockRunning ? 'default' : 'destructive'}>{localDevelopment ? 'Vista local' : bedrockRunning ? 'En línea' : 'Sin conexión'}</Badge><Button variant="outline" size="sm" href="/"><ArrowLeft /> <span class="hidden sm:inline">Panel</span></Button></div>
 		</header>
 
 		<section class="min-h-0 flex-1 overflow-hidden" aria-label="Salida del servidor">
@@ -152,9 +163,13 @@
 		</section>
 
 		<form class="shrink-0 border-t bg-card p-3 sm:p-4" onsubmit={(event) => { event.preventDefault(); void submit(); }}>
-			{#if error}<Alert.Root variant="destructive" class="mb-3"><Alert.Title>Staging no está disponible</Alert.Title><Alert.Description>{error}</Alert.Description></Alert.Root>{/if}
-			<div class="flex items-center gap-2"><span class="font-mono text-sm text-muted-foreground">›</span><Label class="sr-only" for="command">Comando de Minecraft</Label><Input id="command" bind:value={command} class="font-mono" placeholder="say Hola desde la consola" autocomplete="off" /><Button type="submit" disabled={sending} class="min-w-11 sm:min-w-28"><Send /> <span class="hidden sm:inline">{sending ? 'Enviando…' : 'Enviar'}</span></Button></div>
-			<p class="mt-2 text-xs text-muted-foreground">Staging solamente · no ejecuta comandos de Linux ni afecta producción.</p>
+			{#if error}<Alert.Root variant="destructive" class="mb-3"><Alert.Title>{environment === 'production' ? 'Producción no está disponible' : 'Staging no está disponible'}</Alert.Title><Alert.Description>{error}</Alert.Description></Alert.Root>{/if}
+			{#if environment === 'production'}
+				<p class="text-sm text-muted-foreground">Producción está en modo de solo lectura. Sus comandos, reinicios y despliegues no se pueden ejecutar desde aquí.</p>
+			{:else}
+				<div class="flex items-center gap-2"><span class="font-mono text-sm text-muted-foreground">›</span><Label class="sr-only" for="command">Comando de Minecraft</Label><Input id="command" bind:value={command} class="font-mono" placeholder="say Hola desde la consola" autocomplete="off" /><Button type="submit" disabled={sending} class="min-w-11 sm:min-w-28"><Send /> <span class="hidden sm:inline">{sending ? 'Enviando…' : 'Enviar'}</span></Button></div>
+				<p class="mt-2 text-xs text-muted-foreground">Staging solamente · no ejecuta comandos de Linux ni afecta producción.</p>
+			{/if}
 		</form>
 	</main>
 {/if}

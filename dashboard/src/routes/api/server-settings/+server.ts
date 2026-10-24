@@ -25,7 +25,7 @@ export const GET: RequestHandler = async ({ request }) => {
 	if (!(await isAuthenticated(request))) return unauthorized();
 	if (isLocalDevelopment()) return json({ environment: 'local-development', properties: localProperties, activeProperties: localProperties, hasPendingChanges: false, restartRequired: true });
 	try {
-		return json(await bridgeRequest('/properties'));
+		return json(await bridgeRequest('staging', '/properties'));
 	} catch (error) {
 		return json({ error: error instanceof Error ? error.message : 'No se pudo leer la configuración de staging.' }, 503);
 	}
@@ -39,7 +39,7 @@ export const PUT: RequestHandler = async ({ request }) => {
 	if (isLocalDevelopment()) return json({ ok: true, environment: 'local-development', changed: body.properties, restartRequired: true });
 	try {
 		return json(
-			await bridgeRequest('/properties', {
+			await bridgeRequest('staging', '/properties', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify(body)

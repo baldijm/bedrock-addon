@@ -1,6 +1,6 @@
 import type { RequestHandler } from './$types';
 import { isAuthenticated, json, unauthorized } from '#lib/server/auth';
-import { bridgeRequest } from '#lib/server/bridge';
+import { bridgeRequest, type ServerEnvironment } from '#lib/server/bridge';
 
 const localLogs: { id: number; at: string; text: string }[] = [];
 
@@ -16,9 +16,10 @@ function localConsole() {
 
 export const GET: RequestHandler = async ({ request }) => {
 	if (!(await isAuthenticated(request))) return unauthorized();
+	const environment: ServerEnvironment = new URL(request.url).searchParams.get('environment') === 'production' ? 'production' : 'staging';
 	if (isLocalDevelopment()) return json(localConsole());
 	try {
-		const [health, logs] = await Promise.all([bridgeRequest('/health'), bridgeRequest('/logs?after=0')]);
+		const [health, logs] = await Promise.all([bridgeRequest(environment, '/health'), bridgeRequest(environment, '/logs?after=0')]);
 		return json({ health, logs });
 	} catch (error) {
 		return json(
@@ -32,6 +33,8 @@ export const POST: RequestHandler = async ({ request }) => {
 	if (!(await isAuthenticated(request))) return unauthorized();
 	const body = await request.json().catch(() => null);
 	let command = typeof body?.command === 'string' ? body.command.trim() : '';
+	const environment: ServerEnvironment = body?.environment === 'production' ? 'production' : 'staging';
+	if (environment === 'production') return json({ error: 'Producción está disponible sólo en lectura.' }, 403);
 	command = command.replace(/^\/+/, '');
 	if (!command || command.length > 512 || /[\r\n\0]/.test(command))
 		return json({ error: 'El comando debe ocupar una sola línea de hasta 512 caracteres.' }, 400);
@@ -40,7 +43,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		return json({ ok: true, localDevelopment: true }, 202);
 	}
 	try {
-		const result = await bridgeRequest('/commands', {
+		const result = await bridgeRequest('staging', '/commands', {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({ command })
