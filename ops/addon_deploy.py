@@ -172,6 +172,7 @@ def active_world_directory(root):
 
 def replace_pack_reference(world, filename, reference):
     target = world / filename
+    world_metadata = world.stat()
     existing = []
     if target.exists():
         if target.is_symlink() or not target.is_file():
@@ -186,6 +187,7 @@ def replace_pack_reference(world, filename, reference):
     updated.append(reference)
     temporary = target.with_suffix(".tmp")
     temporary.write_text(json.dumps(updated, indent=2) + "\n", encoding="utf-8")
+    os.chown(temporary, world_metadata.st_uid, world_metadata.st_gid)
     os.chmod(temporary, 0o640)
     temporary.replace(target)
 

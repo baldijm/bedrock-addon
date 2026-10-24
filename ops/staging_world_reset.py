@@ -68,7 +68,10 @@ def set_seed(seed: str) -> None:
 
 def restore_pack_references(archived_world: Path, new_world: Path) -> None:
     """Carry pack metadata into the newly generated staging world."""
-    new_world.mkdir(mode=0o750, parents=True, exist_ok=False)
+    world_metadata = archived_world.stat()
+    new_world.mkdir(mode=world_metadata.st_mode & 0o777, parents=True, exist_ok=False)
+    os.chown(new_world, world_metadata.st_uid, world_metadata.st_gid)
+    os.chmod(new_world, world_metadata.st_mode & 0o777)
     for filename in ("world_behavior_packs.json", "world_resource_packs.json"):
         source = archived_world / filename
         if not source.exists():
@@ -83,7 +86,9 @@ def restore_pack_references(archived_world: Path, new_world: Path) -> None:
             raise RuntimeError(f"Referencia de paquetes inválida: {source}")
         destination = new_world / filename
         destination.write_text(json.dumps(contents, indent=2) + "\n", encoding="utf-8")
-        os.chmod(destination, 0o640)
+        metadata = source.stat()
+        os.chown(destination, metadata.st_uid, metadata.st_gid)
+        os.chmod(destination, metadata.st_mode & 0o777)
 
 
 def verified_r2_backup(archive: Path) -> str:
