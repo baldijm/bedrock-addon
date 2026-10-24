@@ -8,6 +8,7 @@ function runTpr(getTopmostBlock, chunkLoaded = true) {
   let resolveResult;
   const result = new Promise((resolve) => { resolveResult = resolve; });
   const moves = [];
+  const subtitles = [];
   let areasCreated = 0;
   let areasRemoved = 0;
   const dimension = {
@@ -27,6 +28,10 @@ function runTpr(getTopmostBlock, chunkLoaded = true) {
     isValid: true,
     dimension,
     location: { x: 0, y: 70, z: 0 },
+    onScreenDisplay: {
+      setTitle(_title, options) { subtitles.push(options.subtitle); },
+      updateSubtitle(subtitle) { subtitles.push(subtitle); },
+    },
     sendMessage(message) {
       if (message.includes('ubicación segura') || message.includes('No se encontró')) {
         resolveResult(message);
@@ -52,7 +57,7 @@ function runTpr(getTopmostBlock, chunkLoaded = true) {
     Set,
   });
   start(player);
-  return { result, moves, get areasCreated() { return areasCreated; }, get areasRemoved() { return areasRemoved; } };
+  return { result, moves, subtitles, get areasCreated() { return areasCreated; }, get areasRemoved() { return areasRemoved; } };
 }
 
 test('TPR never moves a player when terrain lookup fails', async () => {
@@ -75,6 +80,7 @@ test('TPR moves only after a solid landing block and clear headroom are found', 
   assert.deepEqual(JSON.parse(JSON.stringify(run.moves[0].location)), { x: 412.5, y: 71, z: -380.5 });
   assert.equal(run.moves[0].options.checkForBlocks, true);
   assert.equal(run.areasRemoved, 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(run.subtitles)), ['§e5', '§e4', '§e3', '§e2', '§e1']);
 });
 
 test('TPR does not inspect terrain until the temporary area is loaded', async () => {

@@ -4,6 +4,7 @@ const DISTANCIA_MAXIMA = 2500;
 const MAX_INTENTOS = 6;
 const MAX_ESPERA_TICKS = 100;
 const RADIO_CARGA = 16;
+const CUENTA_REGRESIVA_SEGUNDOS = 5;
 const TELETRANSPORTES_EN_CURSO = new Set();
 const BLOQUES_PELIGROSOS = new Set([
     'minecraft:cactus',
@@ -26,6 +27,28 @@ function coordenadasAleatorias() {
         z: Math.floor(Math.sin(angulo) * radio),
     };
 }
+/** Muestra el tiempo de preparación sin añadir espera si el chunk tarda más. */
+async function mostrarCuentaRegresiva(player) {
+    try {
+        player.onScreenDisplay.setTitle(' ', {
+            subtitle: `§e${CUENTA_REGRESIVA_SEGUNDOS}`,
+            fadeInDuration: 0,
+            stayDuration: (CUENTA_REGRESIVA_SEGUNDOS + 1) * 20,
+            fadeOutDuration: 0,
+        });
+        for (let restantes = CUENTA_REGRESIVA_SEGUNDOS - 1; restantes >= 1; restantes -= 1) {
+            await esperar(20);
+            if (!player.isValid)
+                return false;
+            player.onScreenDisplay.updateSubtitle(`§e${restantes}`);
+        }
+        await esperar(20);
+        return player.isValid;
+    }
+    catch {
+        return player.isValid;
+    }
+}
 async function buscarDestino(player) {
     const dimension = world.getDimension('overworld');
     if (player.dimension.id !== dimension.id) {
@@ -33,6 +56,7 @@ async function buscarDestino(player) {
         return;
     }
     player.sendMessage('§eBuscando un destino seguro…');
+    const cuentaRegresiva = mostrarCuentaRegresiva(player);
     for (let intento = 0; intento < MAX_INTENTOS; intento += 1) {
         const { x, z } = coordenadasAleatorias();
         const nombreArea = `spb_tpr_${player.id.replace(/[^a-zA-Z0-9_]/g, '').slice(-8)}_${intento}`;
@@ -59,6 +83,8 @@ async function buscarDestino(player) {
                 const cabeza = dimension.getBlock({ x: destinoX, y: y + 1, z: destinoZ });
                 if (!pies?.isAir || !cabeza?.isAir)
                     break;
+                if (!await cuentaRegresiva || !player.isValid || player.dimension.id !== dimension.id)
+                    return;
                 if (player.tryTeleport({ x: destinoX + 0.5, y, z: destinoZ + 0.5 }, { dimension, checkForBlocks: true, keepVelocity: false })) {
                     player.sendMessage('§aTe teletransportaste a una ubicación segura.');
                     return;

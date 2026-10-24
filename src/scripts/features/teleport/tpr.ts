@@ -5,6 +5,7 @@ const DISTANCIA_MAXIMA = 2500;
 const MAX_INTENTOS = 6;
 const MAX_ESPERA_TICKS = 100;
 const RADIO_CARGA = 16;
+const CUENTA_REGRESIVA_SEGUNDOS = 5;
 const TELETRANSPORTES_EN_CURSO = new Set<string>();
 const BLOQUES_PELIGROSOS = new Set([
   'minecraft:cactus',
@@ -32,6 +33,28 @@ function coordenadasAleatorias(): { x: number; z: number } {
   };
 }
 
+/** Muestra el tiempo de preparación sin añadir espera si el chunk tarda más. */
+async function mostrarCuentaRegresiva(player: Player): Promise<boolean> {
+  try {
+    player.onScreenDisplay.setTitle(' ', {
+      subtitle: `§e${CUENTA_REGRESIVA_SEGUNDOS}`,
+      fadeInDuration: 0,
+      stayDuration: (CUENTA_REGRESIVA_SEGUNDOS + 1) * 20,
+      fadeOutDuration: 0,
+    });
+
+    for (let restantes = CUENTA_REGRESIVA_SEGUNDOS - 1; restantes >= 1; restantes -= 1) {
+      await esperar(20);
+      if (!player.isValid) return false;
+      player.onScreenDisplay.updateSubtitle(`§e${restantes}`);
+    }
+    await esperar(20);
+    return player.isValid;
+  } catch {
+    return player.isValid;
+  }
+}
+
 async function buscarDestino(player: Player): Promise<void> {
   const dimension = world.getDimension('overworld');
   if (player.dimension.id !== dimension.id) {
@@ -40,6 +63,7 @@ async function buscarDestino(player: Player): Promise<void> {
   }
 
   player.sendMessage('§eBuscando un destino seguro…');
+  const cuentaRegresiva = mostrarCuentaRegresiva(player);
 
   for (let intento = 0; intento < MAX_INTENTOS; intento += 1) {
     const { x, z } = coordenadasAleatorias();
@@ -70,6 +94,8 @@ async function buscarDestino(player: Player): Promise<void> {
         const pies = dimension.getBlock({ x: destinoX, y, z: destinoZ });
         const cabeza = dimension.getBlock({ x: destinoX, y: y + 1, z: destinoZ });
         if (!pies?.isAir || !cabeza?.isAir) break;
+
+        if (!await cuentaRegresiva || !player.isValid || player.dimension.id !== dimension.id) return;
 
         if (player.tryTeleport(
           { x: destinoX + 0.5, y, z: destinoZ + 0.5 },
