@@ -4,6 +4,8 @@ const DISTANCIA_MAXIMA = 2500;
 const MAX_INTENTOS = 6;
 const MAX_ESPERA_TICKS = 100;
 const CUENTA_REGRESIVA_SEGUNDOS = 5;
+const MUESTRAS_POR_ZONA = 24;
+const RADIO_BUSQUEDA_CARGADA = 96;
 const TELETRANSPORTES_EN_CURSO = new Set();
 const BLOQUES_PELIGROSOS = new Set([
     'minecraft:cactus',
@@ -98,6 +100,29 @@ function encontrarDestinoSeguro(dimension, x, z) {
         return undefined;
     return { x: destinoX + 0.5, y, z: destinoZ + 0.5 };
 }
+/** Prueba varias columnas ya cargadas antes de cambiar al jugador de región. */
+function encontrarDestinoEnZonaCargada(dimension, x, z) {
+    const columnas = [{ x, z }];
+    for (let muestra = 0; muestra < MUESTRAS_POR_ZONA; muestra += 1) {
+        columnas.push({
+            x: x + Math.floor(Math.random() * (RADIO_BUSQUEDA_CARGADA * 2 + 1)) - RADIO_BUSQUEDA_CARGADA,
+            z: z + Math.floor(Math.random() * (RADIO_BUSQUEDA_CARGADA * 2 + 1)) - RADIO_BUSQUEDA_CARGADA,
+        });
+    }
+    for (const columna of columnas) {
+        if (!dimension.isChunkLoaded({ x: columna.x, y: 64, z: columna.z }))
+            continue;
+        try {
+            const destino = encontrarDestinoSeguro(dimension, columna.x, columna.z);
+            if (destino)
+                return destino;
+        }
+        catch {
+            // Una columna vecina puede no estar disponible aunque la zona central ya esté cargada.
+        }
+    }
+    return undefined;
+}
 async function buscarDestino(player) {
     const dimension = world.getDimension('overworld');
     if (player.dimension.id !== dimension.id) {
@@ -119,7 +144,7 @@ async function buscarDestino(player) {
                 player.teleport({ x: x + 0.5, y: alturaTemporal, z: z + 0.5 }, { dimension, checkForBlocks: false, keepVelocity: false });
                 if (!await esperarChunkCargado(player, dimension, x, z, alturaTemporal))
                     continue;
-                const destino = encontrarDestinoSeguro(dimension, x, z);
+                const destino = encontrarDestinoEnZonaCargada(dimension, x, z);
                 if (!destino)
                     continue;
                 if (player.tryTeleport(destino, { dimension, checkForBlocks: true, keepVelocity: false })) {
