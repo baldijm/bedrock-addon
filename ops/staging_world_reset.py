@@ -24,6 +24,10 @@ STATUS = STATE / "status.json"
 BACKUPS = Path("/var/backups/bedrock-staging")
 SERVICE = "bedrock-staging.service"
 TOOLS = Path("/opt/bedrock-deploy")
+INSTALLED_PACKS = (
+    ("world_behavior_packs.json", ROOT / "behavior_packs/SPB_BP/manifest.json"),
+    ("world_resource_packs.json", ROOT / "resource_packs/SPB_RP/manifest.json"),
+)
 sys.path.insert(0, str(TOOLS))
 import r2_lab  # noqa: E402
 import world_backup  # noqa: E402
@@ -66,29 +70,52 @@ def set_seed(seed: str) -> None:
     os.replace(temporary, path)
 
 
+def installed_pack_reference(manifest: Path) -> dict[str, object]:
+    if manifest.is_symlink() or not manifest.is_file():
+        raise RuntimeError(f"No existe el manifiesto instalado: {manifest}")
+    try:
+        header = json.loads(manifest.read_text(encoding="utf-8"))["header"]
+        pack_id = header["uuid"]
+        version = header["version"]
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        raise RuntimeError(f"Manifiesto de paquete inválido: {manifest}") from error
+    if not isinstance(pack_id, str) or not isinstance(version, list) or len(version) != 3:
+        raise RuntimeError(f"Manifiesto de paquete inválido: {manifest}")
+    if not all(isinstance(part, int) and part >= 0 for part in version):
+        raise RuntimeError(f"Manifiesto de paquete inválido: {manifest}")
+    return {"pack_id": pack_id, "version": version}
+
+
 def restore_pack_references(archived_world: Path, new_world: Path) -> None:
-    """Carry pack metadata into the newly generated staging world."""
+    """Carry existing metadata and always attach the installed SPB packs."""
     world_metadata = archived_world.stat()
     new_world.mkdir(mode=world_metadata.st_mode & 0o777, parents=True, exist_ok=False)
     os.chown(new_world, world_metadata.st_uid, world_metadata.st_gid)
     os.chmod(new_world, world_metadata.st_mode & 0o777)
-    for filename in ("world_behavior_packs.json", "world_resource_packs.json"):
+    for filename, manifest in INSTALLED_PACKS:
         source = archived_world / filename
-        if not source.exists():
-            continue
-        if source.is_symlink() or not source.is_file():
-            raise RuntimeError(f"Referencia de paquetes insegura: {source}")
-        try:
-            contents = json.loads(source.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as error:
-            raise RuntimeError(f"Referencia de paquetes inválida: {source}") from error
-        if not isinstance(contents, list):
-            raise RuntimeError(f"Referencia de paquetes inválida: {source}")
+        contents: list[object] = []
+        if source.exists():
+            if source.is_symlink() or not source.is_file():
+                raise RuntimeError(f"Referencia de paquetes insegura: {source}")
+            try:
+                loaded = json.loads(source.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as error:
+                raise RuntimeError(f"Referencia de paquetes inválida: {source}") from error
+            if not isinstance(loaded, list):
+                raise RuntimeError(f"Referencia de paquetes inválida: {source}")
+            contents = loaded
+        reference = installed_pack_reference(manifest)
+        contents = [
+            entry
+            for entry in contents
+            if not isinstance(entry, dict) or entry.get("pack_id") != reference["pack_id"]
+        ]
+        contents.append(reference)
         destination = new_world / filename
         destination.write_text(json.dumps(contents, indent=2) + "\n", encoding="utf-8")
-        metadata = source.stat()
-        os.chown(destination, metadata.st_uid, metadata.st_gid)
-        os.chmod(destination, metadata.st_mode & 0o777)
+        os.chown(destination, world_metadata.st_uid, world_metadata.st_gid)
+        os.chmod(destination, 0o640)
 
 
 def verified_r2_backup(archive: Path) -> str:
