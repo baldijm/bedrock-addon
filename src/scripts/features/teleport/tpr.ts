@@ -5,8 +5,9 @@ const DISTANCIA_MAXIMA = 2500;
 const MAX_INTENTOS = 6;
 const MAX_ESPERA_TICKS = 100;
 const CUENTA_REGRESIVA_SEGUNDOS = 5;
-const MUESTRAS_POR_ZONA = 24;
-const RADIO_BUSQUEDA_CARGADA = 96;
+const RADIO_REJILLA_CARGADA = 32;
+const PASO_REJILLA_CARGADA = 4;
+const CONSULTAS_POR_TICK = 24;
 const TELETRANSPORTES_EN_CURSO = new Set<string>();
 const BLOQUES_PELIGROSOS = new Set([
   'minecraft:cactus',
@@ -118,30 +119,50 @@ function encontrarDestinoSeguro(
   return { x: destinoX + 0.5, y, z: destinoZ + 0.5 };
 }
 
-/** Prueba varias columnas ya cargadas antes de cambiar al jugador de región. */
-function encontrarDestinoEnZonaCargada(
+/**
+ * Explora una rejilla de columnas ya cargadas y elige uniformemente una de
+ * las seguras. Se reparte en varios ticks para no bloquear el servidor.
+ */
+async function encontrarDestinoEnZonaCargada(
   dimension: Dimension,
   x: number,
   z: number,
-): { x: number; y: number; z: number } | undefined {
-  const columnas = [{ x, z }];
-  for (let muestra = 0; muestra < MUESTRAS_POR_ZONA; muestra += 1) {
-    columnas.push({
-      x: x + Math.floor(Math.random() * (RADIO_BUSQUEDA_CARGADA * 2 + 1)) - RADIO_BUSQUEDA_CARGADA,
-      z: z + Math.floor(Math.random() * (RADIO_BUSQUEDA_CARGADA * 2 + 1)) - RADIO_BUSQUEDA_CARGADA,
-    });
-  }
+): Promise<{ x: number; y: number; z: number } | undefined> {
+  let elegido: { x: number; y: number; z: number } | undefined;
+  let seguros = 0;
+  let consultasDesdeUltimoYield = 0;
 
-  for (const columna of columnas) {
-    if (!dimension.isChunkLoaded({ x: columna.x, y: 64, z: columna.z })) continue;
-    try {
-      const destino = encontrarDestinoSeguro(dimension, columna.x, columna.z);
-      if (destino) return destino;
-    } catch {
-      // Una columna vecina puede no estar disponible aunque la zona central ya esté cargada.
+  for (
+    let desplazamientoX = -RADIO_REJILLA_CARGADA;
+    desplazamientoX <= RADIO_REJILLA_CARGADA;
+    desplazamientoX += PASO_REJILLA_CARGADA
+  ) {
+    for (
+      let desplazamientoZ = -RADIO_REJILLA_CARGADA;
+      desplazamientoZ <= RADIO_REJILLA_CARGADA;
+      desplazamientoZ += PASO_REJILLA_CARGADA
+    ) {
+      const columna = { x: x + desplazamientoX, z: z + desplazamientoZ };
+      if (!dimension.isChunkLoaded({ x: columna.x, y: 64, z: columna.z })) continue;
+      consultasDesdeUltimoYield += 1;
+      try {
+        const destino = encontrarDestinoSeguro(dimension, columna.x, columna.z);
+        if (destino) {
+          seguros += 1;
+          // Muestreo de reservorio: cada punto seguro tiene la misma probabilidad.
+          if (Math.random() < 1 / seguros) elegido = destino;
+        }
+      } catch {
+        // Una columna vecina puede no estar disponible aunque la zona central ya esté cargada.
+      }
+
+      if (consultasDesdeUltimoYield >= CONSULTAS_POR_TICK) {
+        consultasDesdeUltimoYield = 0;
+        await esperar(1);
+      }
     }
   }
-  return undefined;
+  return elegido;
 }
 
 async function buscarDestino(player: Player): Promise<void> {
@@ -170,7 +191,7 @@ async function buscarDestino(player: Player): Promise<void> {
         );
         if (!await esperarChunkCargado(player, dimension, x, z, alturaTemporal)) continue;
 
-        const destino = encontrarDestinoEnZonaCargada(dimension, x, z);
+        const destino = await encontrarDestinoEnZonaCargada(dimension, x, z);
         if (!destino) continue;
         if (player.tryTeleport(destino, { dimension, checkForBlocks: true, keepVelocity: false })) {
           mostrarEstado(player, '');
