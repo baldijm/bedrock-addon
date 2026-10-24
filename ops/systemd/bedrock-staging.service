@@ -12,7 +12,7 @@ Environment=LD_LIBRARY_PATH=/opt/bedrock-staging
 # A staging deployment must not receive the production API credential.
 Environment=SPB_API_TOKEN=
 EnvironmentFile=/etc/bedrock-staging-console/bridge.env
-ExecStart=/usr/local/lib/spb/bedrock-console-bridge.py --root /opt/bedrock-staging --listen 127.0.0.1:3002
+ExecStart=/usr/bin/python3 /usr/local/lib/spb/bedrock-console-bridge.py --root /opt/bedrock-staging --listen 127.0.0.1:3002
 Restart=on-failure
 RestartSec=10
 TimeoutStopSec=70
