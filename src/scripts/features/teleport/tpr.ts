@@ -1,7 +1,7 @@
 import { InputPermissionCategory, system, type Dimension, type Player, world } from '@minecraft/server';
 
 const DISTANCIA_MINIMA = 300;
-const DISTANCIA_MAXIMA = 2500;
+const DISTANCIA_MAXIMA = 5000;
 const MAX_INTENTOS = 6;
 const MAX_ESPERA_TICKS = 100;
 const CUENTA_REGRESIVA_SEGUNDOS = 5;
