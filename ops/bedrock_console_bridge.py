@@ -174,7 +174,10 @@ def request_world_reset(root: Path, value: object) -> str:
     path.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
     try:
         subprocess.run(
-            ["sudo", "/bin/systemctl", "start", f"{WORLD_RESET_UNIT_PREFIX}{operation}.service"],
+            # El worker de reset detiene bedrock-staging, que también aloja este
+            # bridge. No debemos esperar al oneshot: systemd acepta el trabajo y
+            # devolvemos el ID antes de que el bridge se apague.
+            ["sudo", "/bin/systemctl", "start", "--no-block", f"{WORLD_RESET_UNIT_PREFIX}{operation}.service"],
             check=True,
             timeout=10,
             capture_output=True,
