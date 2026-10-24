@@ -111,7 +111,7 @@ def remove_directory(path):
 
 
 def copy_packages(source, root, environment):
-    """Cambia sólo los tres paquetes; mundo y configuración quedan intactos."""
+    """Cambia los paquetes y conserva sus referencias en el mundo activo."""
     targets = deployment_paths(root)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     rollback = STATE / "addon-rollbacks" / environment / f"{stamp}-{uuid.uuid4().hex[:8]}"
@@ -125,6 +125,7 @@ def copy_packages(source, root, environment):
         for relative, destination in PACKS:
             target = root / destination
             shutil.copytree(source / relative, target, copy_function=shutil.copy2)
+        ensure_active_world_pack_references(source, root)
     except BaseException:
         for _, destination in PACKS:
             target = root / destination
@@ -135,6 +136,65 @@ def copy_packages(source, root, environment):
                 shutil.move(str(saved), str(target))
         raise
     return rollback
+
+
+def load_manifest_reference(source, relative):
+    manifest = source / relative / "manifest.json"
+    try:
+        header = json.loads(manifest.read_text(encoding="utf-8"))["header"]
+        pack_id = header["uuid"]
+        version = header["version"]
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        raise RuntimeError(f"Manifiesto inválido: {manifest}") from error
+    if not isinstance(pack_id, str) or not isinstance(version, list) or len(version) != 3:
+        raise RuntimeError(f"Manifiesto inválido: {manifest}")
+    if not all(isinstance(part, int) and part >= 0 for part in version):
+        raise RuntimeError(f"Manifiesto inválido: {manifest}")
+    return {"pack_id": pack_id, "version": version}
+
+
+def active_world_directory(root):
+    properties = root / "server.properties"
+    try:
+        level_name = next(
+            line.split("=", 1)[1]
+            for line in properties.read_text(encoding="utf-8").splitlines()
+            if line.startswith("level-name=")
+        )
+    except (OSError, StopIteration) as error:
+        raise RuntimeError("No se pudo determinar el mundo activo") from error
+    if not level_name or Path(level_name).name != level_name:
+        raise RuntimeError("El nombre del mundo activo no es seguro")
+    world = root / "worlds" / level_name
+    require_real_directory(world, "El mundo activo")
+    return world
+
+
+def replace_pack_reference(world, filename, reference):
+    target = world / filename
+    existing = []
+    if target.exists():
+        if target.is_symlink() or not target.is_file():
+            raise RuntimeError(f"La referencia de paquetes no es segura: {target}")
+        try:
+            existing = json.loads(target.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as error:
+            raise RuntimeError(f"La referencia de paquetes es inválida: {target}") from error
+        if not isinstance(existing, list):
+            raise RuntimeError(f"La referencia de paquetes es inválida: {target}")
+    updated = [entry for entry in existing if not isinstance(entry, dict) or entry.get("pack_id") != reference["pack_id"]]
+    updated.append(reference)
+    temporary = target.with_suffix(".tmp")
+    temporary.write_text(json.dumps(updated, indent=2) + "\n", encoding="utf-8")
+    os.chmod(temporary, 0o640)
+    temporary.replace(target)
+
+
+def ensure_active_world_pack_references(source, root):
+    """Attach current SPB BP/RP metadata to the configured active world."""
+    world = active_world_directory(root)
+    replace_pack_reference(world, "world_behavior_packs.json", load_manifest_reference(source, Path("BP")))
+    replace_pack_reference(world, "world_resource_packs.json", load_manifest_reference(source, Path("RP")))
 
 
 def write_receipt(environment, commit, rollback):

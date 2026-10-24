@@ -66,6 +66,26 @@ def set_seed(seed: str) -> None:
     os.replace(temporary, path)
 
 
+def restore_pack_references(archived_world: Path, new_world: Path) -> None:
+    """Carry pack metadata into the newly generated staging world."""
+    new_world.mkdir(mode=0o750, parents=True, exist_ok=False)
+    for filename in ("world_behavior_packs.json", "world_resource_packs.json"):
+        source = archived_world / filename
+        if not source.exists():
+            continue
+        if source.is_symlink() or not source.is_file():
+            raise RuntimeError(f"Referencia de paquetes insegura: {source}")
+        try:
+            contents = json.loads(source.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as error:
+            raise RuntimeError(f"Referencia de paquetes inválida: {source}") from error
+        if not isinstance(contents, list):
+            raise RuntimeError(f"Referencia de paquetes inválida: {source}")
+        destination = new_world / filename
+        destination.write_text(json.dumps(contents, indent=2) + "\n", encoding="utf-8")
+        os.chmod(destination, 0o640)
+
+
 def verified_r2_backup(archive: Path) -> str:
     environment = r2_lab.load_environment()
     r2_lab.run_restic(environment, "snapshots", "--json")
@@ -116,7 +136,9 @@ def main(operation: str) -> int:
         write_status(state="replacing-world", operation=operation, world=world, snapshot=snapshot)
         archived_worlds = ROOT / ".world-archive"
         archived_worlds.mkdir(mode=0o700, exist_ok=True)
-        os.replace(source, archived_worlds / f"{world}-{now}-{operation[:8]}")
+        archived_world = archived_worlds / f"{world}-{now}-{operation[:8]}"
+        os.replace(source, archived_world)
+        restore_pack_references(archived_world, source)
         set_seed(seed)
         run("/bin/systemctl", "start", SERVICE, timeout=90)
         was_stopped = False
