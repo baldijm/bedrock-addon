@@ -5,5 +5,9 @@ Description=Reset verified staging Bedrock world (%i)
 Type=oneshot
 User=root
 Group=root
+# El bridge que acepta la solicitud vive dentro de bedrock-staging.service.
+# Damos tiempo a que la respuesta HTTP 202 atraviese el túnel antes de que el
+# worker detenga staging para respaldar y reemplazar el mundo.
+ExecStartPre=/bin/sleep 5
 ExecStart=/usr/local/lib/spb/staging-world-reset.py %i
 TimeoutStartSec=20min
