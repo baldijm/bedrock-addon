@@ -60,13 +60,30 @@ function congelarDuranteTpr(player, congelado) {
         // La protección física no depende de este bloqueo de controles.
     }
 }
-function protegerDuranteCarga(player) {
+/**
+ * Bedrock no permite asignar la velocidad Y de un jugador directamente.
+ * Limpiar la velocidad cada tick anula la gravedad y cualquier impulso
+ * residual mientras los controles están bloqueados, sin aplicar efectos.
+ */
+function sujetarDuranteCarga(player) {
+    const detener = () => {
+        try {
+            player.clearVelocity();
+        }
+        catch {
+            // Si el jugador deja de ser válido, el intervalo se limpia al terminar el TPR.
+        }
+    };
+    detener();
+    const intervalo = system.runInterval(detener, 1);
+    return () => system.clearRun(intervalo);
+}
+function detenerAlJugador(player) {
     try {
-        player.addEffect('minecraft:slow_falling', 20 * 12, { showParticles: false });
-        player.addEffect('minecraft:resistance', 20 * 12, { amplifier: 4, showParticles: false });
+        player.clearVelocity();
     }
     catch {
-        // La altura temporal y los reintentos siguen evitando una caída larga.
+        // La teletransportación sigue funcionando si el jugador deja de ser válido.
     }
 }
 async function esperarChunkCargado(player, dimension, x, z, alturaTemporal) {
@@ -147,7 +164,7 @@ async function buscarDestino(player) {
     if (!await mostrarCuentaRegresiva(player) || player.dimension.id !== dimension.id)
         return;
     congelarDuranteTpr(player, true);
-    protegerDuranteCarga(player);
+    const soltarSujecion = sujetarDuranteCarga(player);
     try {
         for (let intento = 0; intento < MAX_INTENTOS; intento += 1) {
             const { x, z } = intento === 0 ? primerIntento : coordenadasAleatorias();
@@ -171,16 +188,20 @@ async function buscarDestino(player) {
         if (!player.isValid || player.dimension.id !== dimension.id)
             return;
         try {
+            detenerAlJugador(player);
             player.teleport(origen, { dimension, checkForBlocks: true, keepVelocity: false });
         }
         catch {
-            // Si el origen dejó de ser válido, la protección temporal aún evita daño de caída.
+            // Si el origen dejó de ser válido, no se puede restaurar su ubicación.
         }
         mostrarEstado(player, '§cNo se encontró un destino seguro.');
     }
     finally {
-        if (player.isValid)
+        soltarSujecion();
+        if (player.isValid) {
+            detenerAlJugador(player);
             congelarDuranteTpr(player, false);
+        }
     }
 }
 export function teletransportarAleatoriamente(player) {

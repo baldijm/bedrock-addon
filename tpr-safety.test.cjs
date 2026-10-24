@@ -9,7 +9,7 @@ function runTpr(getTopmostBlock, chunkLoaded = true) {
   const result = new Promise((resolve) => { resolveResult = resolve; });
   const moves = [];
   const actionBars = [];
-  const effects = [];
+  let clearedVelocity = 0;
   const movementPermissions = [];
   const dimension = {
     id: 'minecraft:overworld',
@@ -32,7 +32,7 @@ function runTpr(getTopmostBlock, chunkLoaded = true) {
     inputPermissions: {
       setPermissionCategory(_category, enabled) { movementPermissions.push(enabled); },
     },
-    addEffect(effect, duration, options) { effects.push({ effect, duration, options }); },
+    clearVelocity() { clearedVelocity += 1; },
     sendMessage() {},
     teleport(location, options) {
       moves.push({ location, options, type: 'temporary' });
@@ -51,14 +51,18 @@ function runTpr(getTopmostBlock, chunkLoaded = true) {
     .replace('export function teletransportarAleatoriamente', 'function teletransportarAleatoriamente');
   const start = vm.runInNewContext(`${source}\nteletransportarAleatoriamente`, {
     world: { getDimension() { return dimension; } },
-    system: { runTimeout(callback) { setImmediate(callback); } },
+    system: {
+      runTimeout(callback) { setImmediate(callback); },
+      runInterval() { return 1; },
+      clearRun() {},
+    },
     InputPermissionCategory: { Movement: 'Movement' },
     Date,
     Math,
     Set,
   });
   start(player);
-  return { result, moves, actionBars, effects, movementPermissions };
+  return { result, moves, actionBars, clearedVelocity, movementPermissions };
 }
 
 test('TPR returns to the origin when terrain lookup fails', async () => {
@@ -83,7 +87,6 @@ test('TPR moves only after a solid landing block and clear headroom are found', 
   assert.equal(run.moves[0].options.checkForBlocks, false);
   assert.equal(run.moves[1].type, 'landing');
   assert.deepEqual(JSON.parse(JSON.stringify(run.moves[1].location)), { x: 412.5, y: 71, z: -380.5 });
-  assert.deepEqual(JSON.parse(JSON.stringify(run.effects.map(({ effect }) => effect))), ['minecraft:slow_falling', 'minecraft:resistance']);
   assert.deepEqual(JSON.parse(JSON.stringify(run.movementPermissions)), [false, true]);
 });
 
