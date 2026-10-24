@@ -27,6 +27,14 @@ def child_running() -> bool:
 def set_running(wanted: bool, timeout: int = 75) -> None:
     if wanted:
         STOP_MARKER.unlink(missing_ok=True)
+        # A freshly started bridge starts Bedrock by itself.  Let it publish
+        # its child PID before falling back to SIGUSR2; sending that signal as
+        # soon as systemd forks Python races its signal handler installation.
+        ready_deadline = time.monotonic() + min(timeout, 10)
+        while time.monotonic() < ready_deadline:
+            if child_running():
+                return
+            time.sleep(0.1)
     else:
         STOP_MARKER.touch(mode=0o644, exist_ok=True)
     if child_running() == wanted:
