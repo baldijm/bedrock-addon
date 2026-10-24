@@ -19,7 +19,6 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
   "devDependencies": {
     "@minecraft/server": "2.7.0",
     "@minecraft/server-ui": "2.0.0",
