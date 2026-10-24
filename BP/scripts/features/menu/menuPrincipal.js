@@ -5,6 +5,7 @@ import { establecerCreativePlus, establecerPuntosPorEliminacion, establecerPvpAc
 import { DURACION_SOLICITUD_PVP_MS, crearSolicitudPvp, obtenerSolicitudesPvp, responderSolicitudPvp } from '../pvp/pvp.js';
 import { hayPartidaArenaActiva, iniciarPartidaArena } from '../games/arenaPvp.js';
 import { DURACION_SOLICITUD_TPA_MS, crearSolicitudTpa, obtenerSolicitudesTpa, responderSolicitudTpa } from '../teleport/tpa.js';
+import { teletransportarAleatoriamente } from '../teleport/tpr.js';
 import { obtenerRankingCompleto, obtenerResumenJugador } from '../../global/ranking.js';
 function esAdministrador(player) {
     return player.hasTag('op');
@@ -24,6 +25,7 @@ export function abrirMenuPrincipal(player) {
     if (pvpActivo)
         form.button('PvP');
     form.button('TPA');
+    form.button('TPR');
     if (esAdministrador(player)) {
         form.button('Settings');
         form.button('Gamemode');
@@ -47,6 +49,11 @@ export function abrirMenuPrincipal(player) {
             indice += 1;
         if (respuesta.selection === indice) {
             abrirMenuTpa(player);
+            return;
+        }
+        indice += 1;
+        if (respuesta.selection === indice) {
+            teletransportarAleatoriamente(player);
             return;
         }
         indice += 1;
