@@ -38,7 +38,7 @@
 
 	async function refresh() {
 		try {
-			const response = await fetch(`/api/commands?environment=${environment}`, { headers: { 'content-type': 'application/json' } });
+			const response = await fetch('/api/commands', { headers: { 'content-type': 'application/json' } });
 			const body = await response.json().catch(() => ({}));
 			if (response.status === 401) {
 				authenticated = false;
@@ -50,6 +50,7 @@
 				return;
 			}
 			logs = body.logs.lines;
+			environment = body.environment === 'production' ? 'production' : 'staging';
 			bedrockRunning = body.health.bedrockRunning === true;
 			localDevelopment = body.health.localDevelopment === true;
 			authenticated = true;
@@ -84,7 +85,7 @@
 		sending = true;
 		error = '';
 		try {
-			await api('/api/commands', { method: 'POST', body: JSON.stringify({ command, environment }) });
+			await api('/api/commands', { method: 'POST', body: JSON.stringify({ command }) });
 			command = '';
 			await refresh();
 		} catch (reason) {
@@ -92,16 +93,6 @@
 		} finally {
 			sending = false;
 		}
-	}
-
-	function changeEnvironment(value: string) {
-		const next = value === 'production' ? 'production' : 'staging';
-		if (environment === next) return;
-		environment = next;
-		logs = [];
-		error = '';
-		loading = true;
-		void refresh();
 	}
 
 	onMount(() => {
@@ -149,7 +140,7 @@
 		<header class="flex h-14 shrink-0 items-center gap-3 border-b px-4">
 			<div class="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground"><Terminal class="size-4" /></div>
 			<div class="min-w-0"><p class="truncate text-sm font-medium">Terminal de {environment === 'production' ? 'producción' : 'staging'}</p><p class="text-xs text-muted-foreground">{localDevelopment ? 'Vista local simulada' : environment === 'production' ? 'Observador de solo lectura' : 'Salida real de Bedrock'} · {logs.length} líneas</p></div>
-			<div class="ml-auto flex shrink-0 items-center gap-2"><select aria-label="Entorno" value={environment} onchange={(event) => changeEnvironment((event.currentTarget as HTMLSelectElement).value)} class="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground"><option value="staging">Staging</option><option value="production">Producción</option></select><Badge variant={localDevelopment ? 'outline' : bedrockRunning ? 'default' : 'destructive'}>{localDevelopment ? 'Vista local' : bedrockRunning ? 'En línea' : 'Sin conexión'}</Badge><Button variant="outline" size="sm" href="/"><ArrowLeft /> <span class="hidden sm:inline">Panel</span></Button></div>
+			<div class="ml-auto mr-36 flex shrink-0 items-center gap-2 sm:mr-44"><Badge variant={localDevelopment ? 'outline' : bedrockRunning ? 'default' : 'destructive'}>{localDevelopment ? 'Vista local' : bedrockRunning ? 'En línea' : 'Sin conexión'}</Badge><Button variant="outline" size="sm" href="/"><ArrowLeft /> <span class="hidden sm:inline">Panel</span></Button></div>
 		</header>
 
 		<section class="min-h-0 flex-1 overflow-hidden" aria-label="Salida del servidor">

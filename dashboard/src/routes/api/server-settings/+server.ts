@@ -1,6 +1,7 @@
 import type { RequestHandler } from './$types';
 import { isAuthenticated, json, unauthorized } from '#lib/server/auth';
 import { bridgeRequest } from '#lib/server/bridge';
+import { resolveEnvironment } from '#lib/server/environment';
 
 const localProperties = {
 	'server-name': 'SPB — staging local',
@@ -23,6 +24,8 @@ function isLocalDevelopment() {
 
 export const GET: RequestHandler = async ({ request }) => {
 	if (!(await isAuthenticated(request))) return unauthorized();
+	const environment = resolveEnvironment(request);
+	if (environment === 'production') return json({ environment, readOnly: true, error: 'La configuración de producción todavía no se expone desde el observador.' });
 	if (isLocalDevelopment()) return json({ environment: 'local-development', properties: localProperties, activeProperties: localProperties, gameRules: { showCoordinates: false }, hasPendingChanges: false, restartRequired: true });
 	try {
 		const [properties, gameRules] = await Promise.all([
@@ -37,6 +40,7 @@ export const GET: RequestHandler = async ({ request }) => {
 
 export const PUT: RequestHandler = async ({ request }) => {
 	if (!(await isAuthenticated(request))) return unauthorized();
+	if (resolveEnvironment(request) === 'production') return json({ error: 'Producción está disponible sólo en lectura.' }, 403);
 	const body = await request.json().catch(() => null);
 	if (!body || typeof body !== 'object' || !body.properties || typeof body.properties !== 'object')
 		return json({ error: 'Configuración inválida.' }, 400);

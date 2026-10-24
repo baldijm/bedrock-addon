@@ -1,6 +1,7 @@
 import type { RequestHandler } from './$types';
 import { isAuthenticated, json, unauthorized } from '#lib/server/auth';
 import { bridgeRequest } from '#lib/server/bridge';
+import { resolveEnvironment } from '#lib/server/environment';
 
 function isLocalDevelopment() {
 	return import.meta.env.DEV && Boolean(process.env.CONSOLE_PASSWORD);
@@ -8,6 +9,7 @@ function isLocalDevelopment() {
 
 export const POST: RequestHandler = async ({ request }) => {
 	if (!(await isAuthenticated(request))) return unauthorized();
+	if (resolveEnvironment(request) === 'production') return json({ error: 'Producción está disponible sólo en lectura.' }, 403);
 	if (isLocalDevelopment()) return json({ ok: true, localDevelopment: true, restarting: false });
 	try {
 		await bridgeRequest('staging', '/commands', {

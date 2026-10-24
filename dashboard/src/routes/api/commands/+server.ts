@@ -1,6 +1,7 @@
 import type { RequestHandler } from './$types';
 import { isAuthenticated, json, unauthorized } from '#lib/server/auth';
 import { bridgeRequest, type ServerEnvironment } from '#lib/server/bridge';
+import { resolveEnvironment } from '#lib/server/environment';
 
 const localLogs: { id: number; at: string; text: string }[] = [];
 
@@ -16,11 +17,11 @@ function localConsole() {
 
 export const GET: RequestHandler = async ({ request }) => {
 	if (!(await isAuthenticated(request))) return unauthorized();
-	const environment: ServerEnvironment = new URL(request.url).searchParams.get('environment') === 'production' ? 'production' : 'staging';
-	if (isLocalDevelopment()) return json(localConsole());
+	const environment: ServerEnvironment = resolveEnvironment(request);
+	if (isLocalDevelopment()) return json({ environment, ...localConsole() });
 	try {
 		const [health, logs] = await Promise.all([bridgeRequest(environment, '/health'), bridgeRequest(environment, '/logs?after=0')]);
-		return json({ health, logs });
+		return json({ environment, health, logs });
 	} catch (error) {
 		return json(
 			{ error: error instanceof Error ? error.message : 'No se pudo consultar la consola.' },
@@ -33,7 +34,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	if (!(await isAuthenticated(request))) return unauthorized();
 	const body = await request.json().catch(() => null);
 	let command = typeof body?.command === 'string' ? body.command.trim() : '';
-	const environment: ServerEnvironment = body?.environment === 'production' ? 'production' : 'staging';
+	const environment: ServerEnvironment = resolveEnvironment(request);
 	if (environment === 'production') return json({ error: 'Producción está disponible sólo en lectura.' }, 403);
 	command = command.replace(/^\/+/, '');
 	if (!command || command.length > 512 || /[\r\n\0]/.test(command))
