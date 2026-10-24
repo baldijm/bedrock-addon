@@ -95,8 +95,8 @@
 				productionReadOnly = true;
 				activeProperties = body.properties ?? {};
 				settings = fromProperties(activeProperties);
-				settings.showCoordinates = bool(activeProperties.showcoordinates);
-				settings.showDaysPlayed = false;
+				settings.showCoordinates = body.gameRules?.showCoordinates === true;
+				settings.showDaysPlayed = body.gameRules?.showDaysPlayed === true;
 				serverAvailable = Object.keys(activeProperties).length > 0;
 				if (!response.ok) throw new Error(body.error ?? 'No se pudo leer la configuración de producción.');
 				return;

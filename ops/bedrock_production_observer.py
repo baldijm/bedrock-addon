@@ -20,6 +20,7 @@ import uuid
 SERVICE = "bedrock.service"
 MAX_LOG_LINES = 300
 ROOT = Path("/opt/bedrock")
+WORLDS_ROOT = ROOT / "worlds"
 PROMOTION_STATUS = Path("/var/lib/spb/production-world-promotion/status.json")
 PROMOTION_UNIT = "spb-production-world-promote@{}.service"
 SAFE_PROPERTIES = {
@@ -27,6 +28,10 @@ SAFE_PROPERTIES = {
     "view-distance", "tick-distance", "allow-cheats", "allow-list",
     "default-player-permission-level", "player-idle-timeout", "showcoordinates",
     "online-mode", "transport", "server-port", "texturepack-required",
+}
+WORLD_GAMERULES = {
+    "showCoordinates": "showcoordinates",
+    "showDaysPlayed": "showdaysplayed",
 }
 
 
@@ -84,6 +89,38 @@ def production_properties() -> dict[str, str]:
         if key in SAFE_PROPERTIES:
             properties[key] = value
     return properties
+
+
+def production_gamerules() -> dict[str, bool]:
+    """Read selected boolean gamerules directly from the active world's level.dat.
+
+    Bedrock stores these rules in the world's little-endian NBT data, not in
+    server.properties.  This observer only examines the byte-tag values and
+    never opens a console connection or modifies the world.
+    """
+    world = production_properties().get("level-name", "")
+    if not world or world in {".", ".."} or "/" in world or "\\" in world:
+        raise RuntimeError("El nombre del mundo activo de producción no es válido.")
+    level_dat = WORLDS_ROOT / world / "level.dat"
+    if level_dat.is_symlink() or not level_dat.is_file():
+        raise RuntimeError("No se pudo leer level.dat del mundo activo de producción.")
+    try:
+        data = level_dat.read_bytes()
+    except OSError as error:
+        raise RuntimeError("No se pudo leer level.dat del mundo activo de producción.") from error
+
+    values: dict[str, bool] = {}
+    for response_key, rule_name in WORLD_GAMERULES.items():
+        encoded_name = rule_name.encode("ascii")
+        # NBT TAG_Byte (1), name length as little-endian uint16, field name,
+        # then the boolean byte (0 or 1).
+        marker = b"\x01" + len(encoded_name).to_bytes(2, "little") + encoded_name
+        index = data.find(marker)
+        value_index = index + len(marker)
+        if index < 0 or value_index >= len(data) or data[value_index] not in {0, 1}:
+            raise RuntimeError(f"No se pudo leer la gamerule {rule_name} del mundo activo.")
+        values[response_key] = data[value_index] == 1
+    return values
 
 
 def promotion_status() -> dict[str, object]:
@@ -158,6 +195,15 @@ class ObserverRequestHandler(BaseHTTPRequestHandler):
         if path == "/properties":
             try:
                 self.send_json(HTTPStatus.OK, {"environment": "production", "readOnly": True, "properties": production_properties()})
+            except RuntimeError as error:
+                self.send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": str(error)})
+            return
+        if path == "/gamerules":
+            try:
+                self.send_json(
+                    HTTPStatus.OK,
+                    {"environment": "production", "readOnly": True, **production_gamerules()},
+                )
             except RuntimeError as error:
                 self.send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": str(error)})
             return
