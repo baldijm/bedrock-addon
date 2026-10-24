@@ -53,6 +53,7 @@ PLAYER_LIST_PATTERN = re.compile(
     r"There are (?P<online>\d+)\s*/\s*(?P<capacity>\d+) players online:\s*(?P<names>.*)",
     re.IGNORECASE,
 )
+SHOW_COORDINATES_PATTERN = re.compile(r"showcoordinates.*?\b(true|false)\b", re.IGNORECASE)
 
 
 def validate_command(value: object) -> str:
@@ -328,6 +329,25 @@ class BedrockConsoleBridge:
                             }
         raise RuntimeError("Bedrock no devolvió una respuesta reconocible al comando list.")
 
+    def show_coordinates(self) -> bool:
+        """Read the current gamerule from BDS instead of keeping a dashboard-side copy."""
+        with self._query_lock:
+            _, cursor = self.submit("gamerule showcoordinates")
+            deadline = time.monotonic() + PLAYER_LIST_TIMEOUT_SECONDS
+            while remaining := deadline - time.monotonic():
+                lines = self.output.wait_after(cursor, remaining)
+                if not lines:
+                    break
+                cursor = lines[-1]["id"]
+                for line in lines:
+                    match = SHOW_COORDINATES_PATTERN.search(line["text"])
+                    if match:
+                        return match.group(1).lower() == "true"
+        raise RuntimeError("Bedrock no devolvió el estado de showcoordinates.")
+
+    def set_show_coordinates(self, value: bool) -> None:
+        self.submit(f"gamerule showcoordinates {'true' if value else 'false'}")
+
     def request_stop(self, wait_seconds: int = 60) -> None:
         if not self.is_running() or self.process is None:
             return
@@ -427,6 +447,15 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
                 },
             )
             return
+        if parsed.path == "/gamerules":
+            try:
+                self._send_json(
+                    HTTPStatus.OK,
+                    {"showCoordinates": self.bridge_server.bridge.show_coordinates()},
+                )
+            except RuntimeError as error:
+                self._send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": str(error)})
+            return
         if parsed.path == "/world/reset/status":
             self._send_json(HTTPStatus.OK, read_world_reset_status())
             return
@@ -453,7 +482,7 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
         if not self._require_authorization():
             return
         path = urlparse(self.path).path
-        if path not in {"/commands", "/properties", "/world/reset"}:
+        if path not in {"/commands", "/properties", "/gamerules", "/world/reset"}:
             self._send_json(HTTPStatus.NOT_FOUND, {"error": "No existe esa ruta."})
             return
         try:
@@ -484,6 +513,13 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
                         "message": "Guardado en staging. Reinicia staging para aplicar las propiedades del servidor.",
                     },
                 )
+                return
+            if path == "/gamerules":
+                value = body.get("showCoordinates")
+                if not isinstance(value, bool):
+                    raise ValueError("showCoordinates debe ser booleano.")
+                self.bridge_server.bridge.set_show_coordinates(value)
+                self._send_json(HTTPStatus.ACCEPTED, {"ok": True, "showCoordinates": value})
                 return
             command = validate_command(body.get("command"))
             command_id, cursor = self.bridge_server.bridge.submit(command)

@@ -23,9 +23,13 @@ function isLocalDevelopment() {
 
 export const GET: RequestHandler = async ({ request }) => {
 	if (!(await isAuthenticated(request))) return unauthorized();
-	if (isLocalDevelopment()) return json({ environment: 'local-development', properties: localProperties, activeProperties: localProperties, hasPendingChanges: false, restartRequired: true });
+	if (isLocalDevelopment()) return json({ environment: 'local-development', properties: localProperties, activeProperties: localProperties, gameRules: { showCoordinates: false }, hasPendingChanges: false, restartRequired: true });
 	try {
-		return json(await bridgeRequest('staging', '/properties'));
+		const [properties, gameRules] = await Promise.all([
+			bridgeRequest('staging', '/properties'),
+			bridgeRequest('staging', '/gamerules')
+		]);
+		return json({ ...properties, gameRules });
 	} catch (error) {
 		return json({ error: error instanceof Error ? error.message : 'No se pudo leer la configuración de staging.' }, 503);
 	}
@@ -36,15 +40,24 @@ export const PUT: RequestHandler = async ({ request }) => {
 	const body = await request.json().catch(() => null);
 	if (!body || typeof body !== 'object' || !body.properties || typeof body.properties !== 'object')
 		return json({ error: 'Configuración inválida.' }, 400);
-	if (isLocalDevelopment()) return json({ ok: true, environment: 'local-development', changed: body.properties, restartRequired: true });
+	const showCoordinates = body.gameRules?.showCoordinates;
+	if (showCoordinates !== undefined && typeof showCoordinates !== 'boolean')
+		return json({ error: 'La opción de coordenadas no es válida.' }, 400);
+	if (isLocalDevelopment()) return json({ ok: true, environment: 'local-development', changed: body.properties, restartRequired: true, gameRules: { showCoordinates } });
 	try {
-		return json(
-			await bridgeRequest('staging', '/properties', {
+		const properties = await bridgeRequest('staging', '/properties', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify(body)
-			})
-		);
+			});
+		if (typeof showCoordinates === 'boolean') {
+			await bridgeRequest('staging', '/gamerules', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ showCoordinates })
+			});
+		}
+		return json({ ...properties, gameRules: { showCoordinates } });
 	} catch (error) {
 		return json({ error: error instanceof Error ? error.message : 'No se pudo guardar la configuración de staging.' }, 503);
 	}
