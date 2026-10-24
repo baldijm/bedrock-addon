@@ -53,7 +53,10 @@ PLAYER_LIST_PATTERN = re.compile(
     r"There are (?P<online>\d+)\s*/\s*(?P<capacity>\d+) players online:\s*(?P<names>.*)",
     re.IGNORECASE,
 )
-SHOW_COORDINATES_PATTERN = re.compile(r"showcoordinates.*?\b(true|false)\b", re.IGNORECASE)
+GAMERULE_PATTERNS = {
+    "showcoordinates": re.compile(r"showcoordinates.*?\b(true|false)\b", re.IGNORECASE),
+    "showdaysplayed": re.compile(r"showdaysplayed.*?\b(true|false)\b", re.IGNORECASE),
+}
 
 
 def validate_command(value: object) -> str:
@@ -373,10 +376,13 @@ class BedrockConsoleBridge:
                             }
         raise RuntimeError("Bedrock no devolvió una respuesta reconocible al comando list.")
 
-    def show_coordinates(self) -> bool:
-        """Read the current gamerule from BDS instead of keeping a dashboard-side copy."""
+    def read_boolean_gamerule(self, name: str) -> bool:
+        """Read a boolean gamerule from BDS instead of keeping a dashboard-side copy."""
+        pattern = GAMERULE_PATTERNS.get(name)
+        if pattern is None:
+            raise ValueError("Gamerule no permitida.")
         with self._query_lock:
-            _, cursor = self.submit("gamerule showcoordinates")
+            _, cursor = self.submit(f"gamerule {name}")
             deadline = time.monotonic() + PLAYER_LIST_TIMEOUT_SECONDS
             while remaining := deadline - time.monotonic():
                 lines = self.output.wait_after(cursor, remaining)
@@ -384,13 +390,15 @@ class BedrockConsoleBridge:
                     break
                 cursor = lines[-1]["id"]
                 for line in lines:
-                    match = SHOW_COORDINATES_PATTERN.search(line["text"])
+                    match = pattern.search(line["text"])
                     if match:
                         return match.group(1).lower() == "true"
-        raise RuntimeError("Bedrock no devolvió el estado de showcoordinates.")
+        raise RuntimeError(f"Bedrock no devolvió el estado de {name}.")
 
-    def set_show_coordinates(self, value: bool) -> None:
-        self.submit(f"gamerule showcoordinates {'true' if value else 'false'}")
+    def set_boolean_gamerule(self, name: str, value: bool) -> None:
+        if name not in GAMERULE_PATTERNS:
+            raise ValueError("Gamerule no permitida.")
+        self.submit(f"gamerule {name} {'true' if value else 'false'}")
 
     def request_stop(self, wait_seconds: int = 60, *, keep_stopped: bool = False) -> None:
         if keep_stopped:
@@ -505,7 +513,10 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
             try:
                 self._send_json(
                     HTTPStatus.OK,
-                    {"showCoordinates": self.bridge_server.bridge.show_coordinates()},
+                    {
+                        "showCoordinates": self.bridge_server.bridge.read_boolean_gamerule("showcoordinates"),
+                        "showDaysPlayed": self.bridge_server.bridge.read_boolean_gamerule("showdaysplayed"),
+                    },
                 )
             except RuntimeError as error:
                 self._send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": str(error)})
@@ -569,11 +580,25 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
                 )
                 return
             if path == "/gamerules":
-                value = body.get("showCoordinates")
-                if not isinstance(value, bool):
-                    raise ValueError("showCoordinates debe ser booleano.")
-                self.bridge_server.bridge.set_show_coordinates(value)
-                self._send_json(HTTPStatus.ACCEPTED, {"ok": True, "showCoordinates": value})
+                updates = {
+                    "showCoordinates": ("showcoordinates", body.get("showCoordinates")),
+                    "showDaysPlayed": ("showdaysplayed", body.get("showDaysPlayed")),
+                }
+                requested = {
+                    key: (rule, value)
+                    for key, (rule, value) in updates.items()
+                    if value is not None
+                }
+                if not requested:
+                    raise ValueError("Indica al menos una gamerule para actualizar.")
+                if any(not isinstance(value, bool) for _, value in requested.values()):
+                    raise ValueError("Las gamerules deben ser verdadero o falso.")
+                for rule, value in requested.values():
+                    self.bridge_server.bridge.set_boolean_gamerule(rule, value)
+                self._send_json(
+                    HTTPStatus.ACCEPTED,
+                    {"ok": True, **{key: value for key, (_, value) in requested.items()}},
+                )
                 return
             command = validate_command(body.get("command"))
             command_id, cursor = self.bridge_server.bridge.submit(command)

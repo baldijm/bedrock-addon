@@ -20,7 +20,7 @@
 	type Settings = {
 		serverName: string; levelName: string; levelSeed: string; gamemode: string; difficulty: string;
 		maxPlayers: number; viewDistance: number; tickDistance: number; allowCheats: boolean;
-		allowList: boolean; permissionLevel: string; idleTimeout: number; showCoordinates: boolean;
+		allowList: boolean; permissionLevel: string; idleTimeout: number; showCoordinates: boolean; showDaysPlayed: boolean;
 	};
 
 	let loading = $state(true);
@@ -46,7 +46,7 @@
 	let hasPendingChanges = $state(false);
 
 	function defaults(): Settings {
-		return { serverName: '', levelName: '', levelSeed: '', gamemode: 'survival', difficulty: 'normal', maxPlayers: 10, viewDistance: 12, tickDistance: 4, allowCheats: false, allowList: false, permissionLevel: 'member', idleTimeout: 0, showCoordinates: false };
+		return { serverName: '', levelName: '', levelSeed: '', gamemode: 'survival', difficulty: 'normal', maxPlayers: 10, viewDistance: 12, tickDistance: 4, allowCheats: false, allowList: false, permissionLevel: 'member', idleTimeout: 0, showCoordinates: false, showDaysPlayed: false };
 	}
 	function bool(value: string | undefined) { return value === 'true'; }
 	function status(value: string | undefined) { return bool(value) ? 'Activado' : 'Desactivado'; }
@@ -61,6 +61,7 @@
 		['Distancia de simulación', activeProperties['tick-distance'] || '—'],
 		['Trucos', status(activeProperties['allow-cheats'])],
 		['Coordenadas', settings.showCoordinates ? 'Activadas' : 'Desactivadas'],
+		['Días jugados', settings.showDaysPlayed ? 'Mostrados' : 'Ocultos'],
 		['Lista blanca', status(activeProperties['allow-list'])],
 		['Permiso predeterminado', activeProperties['default-player-permission-level'] || '—'],
 		['Inactividad', activeProperties['player-idle-timeout'] && activeProperties['player-idle-timeout'] !== '0' ? `${activeProperties['player-idle-timeout']} min` : 'Desactivada']
@@ -82,19 +83,20 @@
 			'view-distance': settings.viewDistance, 'tick-distance': settings.tickDistance, 'allow-cheats': settings.allowCheats,
 			'allow-list': settings.allowList, 'default-player-permission-level': settings.permissionLevel,
 			'player-idle-timeout': settings.idleTimeout
-		}, gameRules: { showCoordinates: settings.showCoordinates } };
+		}, gameRules: { showCoordinates: settings.showCoordinates, showDaysPlayed: settings.showDaysPlayed } };
 	}
 	async function load() {
 		loading = true; error = '';
 		try {
 			const response = await fetch('/api/server-settings');
-			const body = await response.json() as { properties?: Properties; activeProperties?: Properties; gameRules?: { showCoordinates?: boolean }; hasPendingChanges?: boolean; environment?: string; readOnly?: boolean; error?: string };
+			const body = await response.json() as { properties?: Properties; activeProperties?: Properties; gameRules?: { showCoordinates?: boolean; showDaysPlayed?: boolean }; hasPendingChanges?: boolean; environment?: string; readOnly?: boolean; error?: string };
 			if (response.status === 401) { location.replace('/terminal?returnTo=/server'); return; }
 			if (body.readOnly) {
 				productionReadOnly = true;
 				activeProperties = body.properties ?? {};
 				settings = fromProperties(activeProperties);
 				settings.showCoordinates = bool(activeProperties.showcoordinates);
+				settings.showDaysPlayed = false;
 				serverAvailable = Object.keys(activeProperties).length > 0;
 				if (!response.ok) throw new Error(body.error ?? 'No se pudo leer la configuración de producción.');
 				return;
@@ -102,6 +104,7 @@
 			if (!response.ok || !body.properties) throw new Error(body.error ?? 'No se pudo leer la configuración.');
 			settings = fromProperties(body.properties);
 			settings.showCoordinates = body.gameRules?.showCoordinates === true;
+			settings.showDaysPlayed = body.gameRules?.showDaysPlayed === true;
 			activeProperties = body.activeProperties ?? body.properties;
 			hasPendingChanges = body.hasPendingChanges === true;
 			serverAvailable = true;
@@ -117,12 +120,13 @@
 		saving = true; error = ''; notice = '';
 		try {
 			const response = await fetch('/api/server-settings', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload()) });
-			const body = await response.json() as { error?: string; changed?: Record<string, string>; restartRequired?: boolean };
+			const body = await response.json() as { error?: string; changed?: Record<string, string>; gameRulesApplied?: string[]; restartRequired?: boolean };
 			if (!response.ok) throw new Error(body.error ?? 'No se pudo guardar la configuración.');
-			const count = Object.keys(body.changed ?? {}).length;
-			if (count) hasPendingChanges = true;
-			notice = count ? `Se guardaron ${count} ajuste${count === 1 ? '' : 's'} en staging. Reinicia staging para aplicarlos.` : 'No había cambios que guardar.';
-			if (count) toast.success('Configuración guardada', { description: 'Los cambios están listos para aplicarse en staging.' });
+			const propertyCount = Object.keys(body.changed ?? {}).length;
+			const gameRuleCount = body.gameRulesApplied?.length ?? 0;
+			if (propertyCount) hasPendingChanges = true;
+			notice = propertyCount ? `Se guardaron ${propertyCount} ajuste${propertyCount === 1 ? '' : 's'} en staging. Reinicia staging para aplicarlos.` : gameRuleCount ? `Se aplicó ${gameRuleCount === 1 ? 'una regla del mundo' : `${gameRuleCount} reglas del mundo`} inmediatamente en staging.` : 'No había cambios que guardar.';
+			if (propertyCount || gameRuleCount) toast.success('Configuración guardada', { description: propertyCount ? 'Las propiedades están listas para aplicarse en staging.' : 'La regla del mundo ya se aplicó en staging.' });
 			else toast.info('Sin cambios', { description: 'La configuración ya coincidía con el archivo.' });
 		} catch (cause) { error = cause instanceof Error ? cause.message : 'No se pudo guardar la configuración.'; toast.error('No se pudo guardar', { description: error }); }
 		finally { saving = false; }
@@ -185,7 +189,7 @@
 			{/if}
 			<form class="space-y-6" onsubmit={(event) => { event.preventDefault(); void save(); }}>
 				<Card.Root><Card.Header><Card.Title>Identidad y mundo</Card.Title><Card.Description>El nombre de mundo cambia qué carpeta de mundo usará Bedrock tras reiniciar; no copia ni elimina mundos.</Card.Description></Card.Header><Card.Content class="grid gap-4 md:grid-cols-2"><div class="grid gap-2"><Label for="server-name">Nombre del servidor</Label><Input id="server-name" bind:value={settings.serverName} maxlength={64} /></div><div class="grid gap-2"><Label for="level-name">Nombre del mundo</Label><Input id="level-name" bind:value={settings.levelName} maxlength={64} /></div><div class="grid gap-2 md:col-span-2"><Label for="level-seed">Seed para mundos nuevos</Label><Input id="level-seed" bind:value={settings.levelSeed} maxlength={64} placeholder="Vacío = aleatoria" /></div></Card.Content></Card.Root>
-				<Card.Root><Card.Header><Card.Title>Jugabilidad</Card.Title></Card.Header><Card.Content class="grid gap-4 md:grid-cols-2"><div class="grid gap-2"><Label for="gamemode">Modo de juego</Label><select id="gamemode" class="h-9 rounded-md border bg-background px-3 text-sm text-foreground" bind:value={settings.gamemode}><option class="bg-background text-foreground" value="survival">Survival</option><option class="bg-background text-foreground" value="creative">Creative</option><option class="bg-background text-foreground" value="adventure">Adventure</option></select></div><div class="grid gap-2"><Label for="difficulty">Dificultad</Label><select id="difficulty" class="h-9 rounded-md border bg-background px-3 text-sm text-foreground" bind:value={settings.difficulty}><option class="bg-background text-foreground" value="peaceful">Pacífico</option><option class="bg-background text-foreground" value="easy">Fácil</option><option class="bg-background text-foreground" value="normal">Normal</option><option class="bg-background text-foreground" value="hard">Difícil</option></select></div><label class="flex items-center gap-3 rounded-lg border p-3 text-sm"><input type="checkbox" bind:checked={settings.allowCheats} /> Permitir trucos <span class="text-muted-foreground">Puede afectar logros del mundo.</span></label><label class="flex items-center gap-3 rounded-lg border p-3 text-sm"><input type="checkbox" bind:checked={settings.showCoordinates} /> Mostrar coordenadas <span class="text-muted-foreground">Se aplica de inmediato a staging.</span></label><label class="flex items-center gap-3 rounded-lg border p-3 text-sm"><input type="checkbox" bind:checked={settings.allowList} /> Activar lista blanca</label><div class="grid gap-2"><Label for="permission">Permiso predeterminado</Label><select id="permission" class="h-9 rounded-md border bg-background px-3 text-sm text-foreground" bind:value={settings.permissionLevel}><option class="bg-background text-foreground" value="visitor">Visitante</option><option class="bg-background text-foreground" value="member">Miembro</option><option class="bg-background text-foreground" value="operator">Operador</option></select></div><div class="grid gap-2"><Label for="idle">Expulsar por inactividad (minutos, 0 desactiva)</Label><Input id="idle" type="number" min="0" max="1440" bind:value={settings.idleTimeout} /></div></Card.Content></Card.Root>
+				<Card.Root><Card.Header><Card.Title>Jugabilidad</Card.Title></Card.Header><Card.Content class="grid gap-4 md:grid-cols-2"><div class="grid gap-2"><Label for="gamemode">Modo de juego</Label><select id="gamemode" class="h-9 rounded-md border bg-background px-3 text-sm text-foreground" bind:value={settings.gamemode}><option class="bg-background text-foreground" value="survival">Survival</option><option class="bg-background text-foreground" value="creative">Creative</option><option class="bg-background text-foreground" value="adventure">Adventure</option></select></div><div class="grid gap-2"><Label for="difficulty">Dificultad</Label><select id="difficulty" class="h-9 rounded-md border bg-background px-3 text-sm text-foreground" bind:value={settings.difficulty}><option class="bg-background text-foreground" value="peaceful">Pacífico</option><option class="bg-background text-foreground" value="easy">Fácil</option><option class="bg-background text-foreground" value="normal">Normal</option><option class="bg-background text-foreground" value="hard">Difícil</option></select></div><label class="flex items-center gap-3 rounded-lg border p-3 text-sm"><input type="checkbox" bind:checked={settings.allowCheats} /> Permitir trucos <span class="text-muted-foreground">Puede afectar logros del mundo.</span></label><label class="flex items-center gap-3 rounded-lg border p-3 text-sm"><input type="checkbox" bind:checked={settings.showCoordinates} /> Mostrar coordenadas <span class="text-muted-foreground">Se aplica de inmediato a staging y viaja con el mundo al promoverlo.</span></label><label class="flex items-center gap-3 rounded-lg border p-3 text-sm"><input type="checkbox" bind:checked={settings.showDaysPlayed} /> Mostrar días jugados <span class="text-muted-foreground">Se aplica de inmediato a staging y viaja con el mundo al promoverlo.</span></label><label class="flex items-center gap-3 rounded-lg border p-3 text-sm"><input type="checkbox" bind:checked={settings.allowList} /> Activar lista blanca</label><div class="grid gap-2"><Label for="permission">Permiso predeterminado</Label><select id="permission" class="h-9 rounded-md border bg-background px-3 text-sm text-foreground" bind:value={settings.permissionLevel}><option class="bg-background text-foreground" value="visitor">Visitante</option><option class="bg-background text-foreground" value="member">Miembro</option><option class="bg-background text-foreground" value="operator">Operador</option></select></div><div class="grid gap-2"><Label for="idle">Expulsar por inactividad (minutos, 0 desactiva)</Label><Input id="idle" type="number" min="0" max="1440" bind:value={settings.idleTimeout} /></div></Card.Content></Card.Root>
 				<Card.Root><Card.Header><Card.Title>Capacidad y rendimiento</Card.Title><Card.Description>Más distancia consume más CPU y memoria. Empieza conservadoramente en staging.</Card.Description></Card.Header><Card.Content class="grid gap-4 md:grid-cols-3"><div class="grid gap-2"><Label for="players">Máximo de jugadores</Label><Input id="players" type="number" min="1" max="100" bind:value={settings.maxPlayers} /></div><div class="grid gap-2"><Label for="view">Distancia de vista</Label><Input id="view" type="number" min="5" max="32" bind:value={settings.viewDistance} /></div><div class="grid gap-2"><Label for="tick">Distancia de simulación</Label><Input id="tick" type="number" min="4" max="12" bind:value={settings.tickDistance} /></div></Card.Content></Card.Root>
 				<div class="flex flex-col gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm md:flex-row md:items-center"><TriangleAlert class="size-5 shrink-0 text-amber-500" /><p class="flex-1">Guardar no reinicia el servidor. El cambio queda preparado en <code>server.properties</code>; reiniciar staging será una acción separada y visible.</p><Button type="submit" disabled={saving}>{#if saving}<LoaderCircle class="animate-spin" /> Guardando…{:else}<Save /> Guardar en staging{/if}</Button></div>
 			</form>
