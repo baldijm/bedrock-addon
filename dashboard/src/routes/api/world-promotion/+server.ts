@@ -5,11 +5,16 @@ import { bridgeRequest } from '#lib/server/bridge';
 export const GET: RequestHandler = async ({ request }) => {
 	if (!(await isAuthenticated(request))) return unauthorized();
 	try {
-		const [status, configuration] = await Promise.all([
-			bridgeRequest('production', '/world/promotion') as Promise<{ productionWorld?: string }>,
-			bridgeRequest('production', '/properties') as Promise<{ properties?: { 'level-name'?: string } }>
+		const [status, production, staging] = await Promise.all([
+			bridgeRequest('production', '/world/promotion') as Promise<{ sourceWorld?: string; productionWorld?: string }>,
+			bridgeRequest('production', '/properties') as Promise<{ properties?: { 'level-name'?: string } }>,
+			bridgeRequest('staging', '/properties') as Promise<{ properties?: { 'level-name'?: string } }>
 		]);
-		return json({ ...status, productionWorld: status.productionWorld ?? configuration.properties?.['level-name'] ?? '' });
+		return json({
+			...status,
+			productionWorld: status.productionWorld ?? production.properties?.['level-name'] ?? '',
+			stagingWorld: status.sourceWorld ?? staging.properties?.['level-name'] ?? ''
+		});
 	} catch (error) {
 		return json({ error: error instanceof Error ? error.message : 'No se pudo consultar la promoción.' }, 503);
 	}

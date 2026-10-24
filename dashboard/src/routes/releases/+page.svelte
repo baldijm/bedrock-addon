@@ -11,7 +11,7 @@
 	import { Label } from '#lib/components/ui/label/index.js';
 
 	type Promotion = {
-		state?: string; operation?: string; sourceWorld?: string; productionWorld?: string;
+		state?: string; operation?: string; sourceWorld?: string; stagingWorld?: string; productionWorld?: string;
 		snapshot?: string; backupSha256?: string; completedAt?: string; error?: string;
 	};
 
@@ -74,7 +74,7 @@
 		{#if error}<Alert.Root variant="destructive"><ShieldAlert /><Alert.Title>No se pudo completar la promoción</Alert.Title><Alert.Description>{error}</Alert.Description></Alert.Root>{/if}
 		{#if loading}<div class="grid min-h-48 place-items-center text-sm text-muted-foreground"><LoaderCircle class="animate-spin" /> Leyendo estado…</div>{:else}
 			<Card.Root class="border-amber-500/30"><Card.Header><Card.Title>Reemplazo completo de mundo</Card.Title><Card.Description>Producción se respaldará y verificará en R2 antes de cualquier reemplazo. No existe fusión automática de inventarios, cofres o progreso entre los dos mundos.</Card.Description></Card.Header><Card.Content class="space-y-5">
-				<div class="grid gap-4 rounded-md border p-4 text-sm sm:grid-cols-2"><div><p class="text-muted-foreground">Mundo de staging</p><p class="mt-1 font-medium">Se toma al iniciar la promoción</p></div><div><p class="text-muted-foreground">Mundo de producción</p><p class="mt-1 font-medium">{promotion.productionWorld || 'No disponible'}</p></div></div>
+				<div class="grid gap-4 rounded-md border p-4 text-sm sm:grid-cols-2"><div><p class="text-muted-foreground">Mundo que se promoverá desde staging</p><p class="mt-1 font-medium">{promotion.stagingWorld || promotion.sourceWorld || 'No disponible'}</p></div><div><p class="text-muted-foreground">Mundo de producción que se reemplazará</p><p class="mt-1 font-medium">{promotion.productionWorld || 'No disponible'}</p></div></div>
 				{#if active}<Alert.Root><LoaderCircle class="animate-spin" /><Alert.Title>{promotion.state === 'copying-staging-world' ? 'Copiando staging' : promotion.state === 'backing-up-production' ? 'Respaldando producción en R2' : promotion.state === 'replacing-production-world' ? 'Reemplazando mundo de producción' : 'Iniciando producción'}</Alert.Title><Alert.Description>La operación está en curso. No cierres ni repitas esta acción; el estado se actualiza automáticamente.</Alert.Description></Alert.Root>{:else if promotion.state === 'complete'}<Alert.Root><Alert.Title>Mundo promovido correctamente</Alert.Title><Alert.Description>Producción volvió a arrancar. El respaldo previo se verificó en R2{promotion.completedAt ? ` · ${new Date(promotion.completedAt).toLocaleString()}` : ''}.</Alert.Description></Alert.Root>{:else if promotion.state === 'failed'}<Alert.Root variant="destructive"><Alert.Title>La promoción no terminó</Alert.Title><Alert.Description>{promotion.error ?? 'Se conservó el respaldo y se intentó restaurar el mundo anterior.'}</Alert.Description></Alert.Root>{/if}
 				<div class="grid gap-2"><Label for="confirmation">Para habilitar la promoción, escribe exactamente <code>{promotion.productionWorld}</code></Label><Input id="confirmation" bind:value={confirmation} autocomplete="off" disabled={active || starting || !promotion.productionWorld} /></div>
 			</Card.Content><Card.Footer><Button type="button" variant="destructive" onclick={() => void promote()} disabled={!canPromote}>{#if starting}<LoaderCircle class="animate-spin" /> Preparando…{:else}<Upload /> Respaldar y promover a producción{/if}</Button></Card.Footer></Card.Root>
