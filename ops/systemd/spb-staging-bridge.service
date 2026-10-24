@@ -1,0 +1,25 @@
+[Unit]
+Description=Persistent SPB console bridge for staging
+Requires=bedrock-staging-api.service
+After=network.target bedrock-staging-api.service
+
+[Service]
+Type=simple
+User=bedrock
+Group=bedrock
+WorkingDirectory=/opt/bedrock-staging
+Environment=LD_LIBRARY_PATH=/opt/bedrock-staging
+Environment=SPB_API_TOKEN=
+EnvironmentFile=/etc/bedrock-staging-console/bridge.env
+RuntimeDirectory=spb-staging-bridge
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=restart
+ExecStart=/usr/bin/python3 /usr/local/lib/spb/bedrock-console-bridge.py --root /opt/bedrock-staging --listen 127.0.0.1:3002 --state-file /run/spb-staging-bridge/bedrock.pid
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=75
+KillMode=mixed
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target

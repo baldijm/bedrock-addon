@@ -240,42 +240,83 @@ class OutputBuffer:
 
 
 class BedrockConsoleBridge:
-    def __init__(self, root: Path, output: OutputBuffer) -> None:
+    def __init__(self, root: Path, output: OutputBuffer, state_file: Path) -> None:
         self.root = root
         self.output = output
+        self.state_file = state_file
         self.active_properties: dict[str, str] = {}
         self.process: subprocess.Popen[str] | None = None
         self._stdin_lock = threading.Lock()
         self._query_lock = threading.Lock()
+        self._lifecycle_lock = threading.RLock()
         self._stop_requested = False
+        self._desired_running = False
+        self._shutdown_requested = False
 
     def start(self) -> None:
-        executable = self.root / "bedrock_server"
-        if not executable.is_file():
-            raise RuntimeError(f"No existe el ejecutable esperado: {executable}")
-        # Snapshot before starting BDS: this is the configuration currently in use.
-        self.active_properties = parse_server_properties(self.root / SERVER_PROPERTIES_FILE)
+        with self._lifecycle_lock:
+            self._desired_running = True
+            if self.is_running() or self._shutdown_requested:
+                return
+            executable = self.root / "bedrock_server"
+            if not executable.is_file():
+                raise RuntimeError(f"No existe el ejecutable esperado: {executable}")
+            # Snapshot before starting BDS: this is the configuration currently in use.
+            self.active_properties = parse_server_properties(self.root / SERVER_PROPERTIES_FILE)
 
-        environment = os.environ.copy()
-        environment["LD_LIBRARY_PATH"] = str(self.root)
-        self.process = subprocess.Popen(
-            [str(executable)],
-            cwd=self.root,
-            env=environment,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-        )
-        threading.Thread(target=self._read_output, name="bedrock-console-output", daemon=True).start()
+            environment = os.environ.copy()
+            environment["LD_LIBRARY_PATH"] = str(self.root)
+            process = subprocess.Popen(
+                [str(executable)],
+                cwd=self.root,
+                env=environment,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+            self.process = process
+            self._stop_requested = False
+            self.state_file.write_text(f"{process.pid}\n", encoding="ascii")
+            threading.Thread(
+                target=self._read_output,
+                args=(process,),
+                name="bedrock-console-output",
+                daemon=True,
+            ).start()
+            threading.Thread(
+                target=self._watch_process,
+                args=(process,),
+                name="bedrock-process-watcher",
+                daemon=True,
+            ).start()
 
-    def _read_output(self) -> None:
-        assert self.process is not None and self.process.stdout is not None
-        for line in self.process.stdout:
+    def _read_output(self, process: subprocess.Popen[str]) -> None:
+        assert process.stdout is not None
+        for line in process.stdout:
             text = line.rstrip("\r\n")
             self.output.append(text)
             print(text, flush=True)
+
+    def _watch_process(self, process: subprocess.Popen[str]) -> None:
+        process.wait()
+        with self._lifecycle_lock:
+            if self.process is not process:
+                return
+            self.state_file.unlink(missing_ok=True)
+            should_restart = self._desired_running and not self._shutdown_requested
+        if should_restart:
+            while True:
+                time.sleep(3)
+                with self._lifecycle_lock:
+                    if not self._desired_running or self._shutdown_requested:
+                        return
+                try:
+                    self.start()
+                    return
+                except Exception as error:
+                    print(f"No se pudo reiniciar Bedrock: {error}", file=sys.stderr, flush=True)
 
     def is_running(self) -> bool:
         return self.process is not None and self.process.poll() is None
@@ -351,8 +392,12 @@ class BedrockConsoleBridge:
     def set_show_coordinates(self, value: bool) -> None:
         self.submit(f"gamerule showcoordinates {'true' if value else 'false'}")
 
-    def request_stop(self, wait_seconds: int = 60) -> None:
+    def request_stop(self, wait_seconds: int = 60, *, keep_stopped: bool = False) -> None:
+        if keep_stopped:
+            with self._lifecycle_lock:
+                self._desired_running = False
         if not self.is_running() or self.process is None:
+            self.state_file.unlink(missing_ok=True)
             return
         if not self._stop_requested:
             self._stop_requested = True
@@ -368,6 +413,12 @@ class BedrockConsoleBridge:
                 self.process.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 self.process.kill()
+
+    def shutdown(self) -> None:
+        with self._lifecycle_lock:
+            self._shutdown_requested = True
+            self._desired_running = False
+        self.request_stop(keep_stopped=True)
 
 
 class BridgeRequestHandler(BaseHTTPRequestHandler):
@@ -568,6 +619,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", required=True, type=Path)
     parser.add_argument("--listen", required=True, type=parse_address)
+    parser.add_argument("--state-file", required=True, type=Path)
     arguments = parser.parse_args()
 
     token = os.environ.get("SPB_BRIDGE_TOKEN", "")
@@ -575,8 +627,9 @@ def main() -> int:
         raise RuntimeError("Falta SPB_BRIDGE_TOKEN o no tiene la longitud mínima.")
 
     output = OutputBuffer()
-    bridge = BedrockConsoleBridge(arguments.root, output)
-    bridge.start()
+    bridge = BedrockConsoleBridge(arguments.root, output, arguments.state_file)
+    if not arguments.state_file.with_name("desired-stopped").exists():
+        bridge.start()
     server = BridgeHTTPServer(arguments.listen, bridge, token, output)
 
     def stop(_signum: int, _frame: object) -> None:
@@ -584,15 +637,29 @@ def main() -> int:
 
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
-
-    watcher = threading.Thread(target=lambda: (bridge.process.wait(), server.shutdown()), daemon=True)
-    watcher.start()
+    signal.signal(
+        signal.SIGUSR1,
+        lambda _signum, _frame: threading.Thread(
+            target=bridge.request_stop,
+            kwargs={"keep_stopped": True},
+            name="bedrock-maintenance-stop",
+            daemon=True,
+        ).start(),
+    )
+    signal.signal(
+        signal.SIGUSR2,
+        lambda _signum, _frame: threading.Thread(
+            target=bridge.start,
+            name="bedrock-maintenance-start",
+            daemon=True,
+        ).start(),
+    )
     try:
         server.serve_forever(poll_interval=0.5)
     finally:
         server.server_close()
-        bridge.request_stop()
-    return bridge.process.returncode if bridge.process and bridge.process.returncode is not None else 1
+        bridge.shutdown()
+    return 0
 
 
 if __name__ == "__main__":

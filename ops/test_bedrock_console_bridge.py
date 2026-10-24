@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 from unittest.mock import Mock
 
 from bedrock_console_bridge import BedrockConsoleBridge, OutputBuffer, parse_address, validate_command
@@ -47,7 +48,7 @@ class AddressTests(unittest.TestCase):
 class PlayerListTests(unittest.TestCase):
     def test_returns_only_the_current_bedrock_list_response(self):
         output = OutputBuffer()
-        bridge = BedrockConsoleBridge(__import__("pathlib").Path("."), output)
+        bridge = BedrockConsoleBridge(Path("."), output, Path("unused.pid"))
         bridge.submit = Mock(return_value=("command-id", 0))
         output.append("[2026-10-23 10:00:00: INFO] There are 2/10 players online: Alex, Steve")
         players = bridge.list_players()
@@ -57,7 +58,7 @@ class PlayerListTests(unittest.TestCase):
 
     def test_reads_names_from_the_following_bedrock_output_line(self):
         output = OutputBuffer()
-        bridge = BedrockConsoleBridge(__import__("pathlib").Path("."), output)
+        bridge = BedrockConsoleBridge(Path("."), output, Path("unused.pid"))
         bridge.submit = Mock(return_value=("command-id", 0))
         output.append("[2026-10-23 10:00:00: INFO] There are 1/10 players online:")
         output.append("Garii")
@@ -68,7 +69,7 @@ class PlayerListTests(unittest.TestCase):
 
     def test_fails_instead_of_returning_an_estimate_when_list_is_not_recognized(self):
         output = OutputBuffer()
-        bridge = BedrockConsoleBridge(__import__("pathlib").Path("."), output)
+        bridge = BedrockConsoleBridge(Path("."), output, Path("unused.pid"))
         bridge.submit = Mock(return_value=("command-id", 0))
         output.append("some unrelated server line")
         with self.assertRaises(RuntimeError):

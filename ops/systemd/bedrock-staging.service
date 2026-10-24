@@ -1,26 +1,15 @@
 [Unit]
 Description=Minecraft Bedrock Dedicated Server (staging)
-Requires=bedrock-staging-api.service
-After=network.target bedrock-staging-api.service
+Requires=spb-staging-bridge.service
+After=spb-staging-bridge.service
 
 [Service]
-Type=simple
-User=bedrock
-Group=bedrock
-WorkingDirectory=/opt/bedrock-staging
-Environment=LD_LIBRARY_PATH=/opt/bedrock-staging
-# A staging deployment must not receive the production API credential.
-Environment=SPB_API_TOKEN=
-EnvironmentFile=/etc/bedrock-staging-console/bridge.env
-ExecStart=/usr/bin/python3 /usr/local/lib/spb/bedrock-console-bridge.py --root /opt/bedrock-staging --listen 127.0.0.1:3002
-Restart=on-failure
-RestartSec=10
-TimeoutStopSec=70
-KillMode=mixed
-LimitNOFILE=1048576
-# The experimental HTTP pack only runs when its credential exists.  Keep the
-# production credential out of this directory; use a separate staging API if
-# HTTP integration itself needs to be tested.
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/python3 /usr/local/lib/spb/bedrock-staging-control.py start
+ExecStop=/usr/bin/python3 /usr/local/lib/spb/bedrock-staging-control.py stop
+TimeoutStartSec=90
+TimeoutStopSec=90
 
 [Install]
 WantedBy=multi-user.target

@@ -8,7 +8,7 @@ No se conecta por SSH al servidor, no ejecuta comandos de Linux y no incluye nin
 
 1. El administrador inicia sesión en la consola web y escribe un comando normal de Minecraft (por ejemplo, `list` o `say hola`).
 2. El Worker autentica la llamada ante el bridge de staging con un secreto que nunca llega al navegador.
-3. Cloudflare Tunnel entrega la solicitud al bridge que escucha exclusivamente en `127.0.0.1:3002` de la VM.
+3. Cloudflare Tunnel entrega la solicitud al bridge persistente que escucha exclusivamente en `127.0.0.1:3002` de la VM.
 4. El bridge es el proceso padre de `bedrock_server`: escribe el comando en su entrada estándar y expone las últimas líneas reales de su salida.
 
 La consola usa texto libre: no existe un registro artificial de comandos permitidos. Aun así, el alcance real es el de los comandos de la consola de Bedrock, no una terminal del sistema operativo. La confirmación de entrega no es una afirmación de que un comando haya surtido el efecto esperado dentro del juego; la salida real del servidor es la evidencia disponible.
@@ -30,7 +30,7 @@ El Worker requiere estos secretos, que se guardan en Cloudflare y nunca en Git:
 
 ## Activar staging después del despliegue
 
-El bridge se instala exclusivamente en staging con `ops/install_console_bridge.sh`. Su secreto vive fuera de Git en `/etc/bedrock-staging-console/bridge.env` con permiso `0600` y la unidad de systemd permanece deliberadamente sin tocar en producción.
+El bridge se instala exclusivamente en staging con `ops/install_console_bridge.sh`. Su secreto vive fuera de Git en `/etc/bedrock-staging-console/bridge.env` con permiso `0600`. `spb-staging-bridge.service` permanece activo durante el mantenimiento y `bedrock-staging.service` controla únicamente el proceso hijo de Minecraft; producción permanece deliberadamente sin tocar.
 
 El conector saliente de Cloudflare se instala con `ops/install_cloudflared_tunnel.sh`; su token vive en `/etc/cloudflared/spb-staging-bridge.env` con permiso `0640` y grupo `cloudflared`. No se abre ningún puerto adicional en Azure. Si más adelante se habilita Cloudflare Access sin aceptar un plan que autorice cargos, puede añadirse como una capa adicional; no es requisito para que el bridge rechace accesos no autorizados.
 
