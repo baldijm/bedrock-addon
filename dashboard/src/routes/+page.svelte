@@ -1,362 +1,125 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
+	import Activity from '@lucide/svelte/icons/activity';
+	import ArrowRight from '@lucide/svelte/icons/arrow-right';
+	import Cloud from '@lucide/svelte/icons/cloud';
+	import Blocks from '@lucide/svelte/icons/blocks';
+	import Menu from '@lucide/svelte/icons/menu';
+	import Server from '@lucide/svelte/icons/server';
+	import ShieldCheck from '@lucide/svelte/icons/shield-check';
+	import Settings from '@lucide/svelte/icons/settings';
+	import Terminal from '@lucide/svelte/icons/terminal';
+	import UsersRound from '@lucide/svelte/icons/users-round';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import * as Separator from '#lib/components/ui/separator/index.js';
+	import * as Sheet from '#lib/components/ui/sheet/index.js';
 
-	type ConsoleLine = {
-		id: number;
-		at: string;
-		text: string;
-	};
+	type ConsoleLine = { id: number; at: string; text: string };
+	type PlayerSnapshot = { online: number; capacity: number; players: string[]; observedAt: string; source: string };
 
-	let authenticated = $state(false);
 	let loading = $state(true);
-	let password = $state('');
-	let command = $state('');
-	let error = $state('');
-	let sending = $state(false);
-	let logs = $state<ConsoleLine[]>([]);
 	let bedrockRunning = $state(false);
+	let logs = $state<ConsoleLine[]>([]);
+	let terminalHref = $state('/terminal');
+	let localPreview = $state(false);
+	let localDevelopment = $state(false);
+	let playerSnapshot = $state<PlayerSnapshot | null>(null);
+	let playersError = $state('');
+	let mobileNavOpen = $state(false);
 
-	async function api(path: string, options: RequestInit = {}) {
-		const response = await fetch(path, {
-			...options,
-			headers: { 'content-type': 'application/json', ...(options.headers ?? {}) }
-		});
-		const body = await response.json().catch(() => ({}));
-		if (!response.ok) throw new Error(body.error || 'No se pudo completar la solicitud.');
-		return body;
-	}
+	const lastLog = $derived(logs.at(-1)?.text ?? 'Aún no hay actividad registrada.');
 
 	async function refresh() {
-		try {
-			const body = await api('/api/commands');
-			logs = body.logs.lines;
-			bedrockRunning = body.health.bedrockRunning === true;
-			authenticated = true;
-			error = '';
-		} catch {
-			authenticated = false;
-		} finally {
-			loading = false;
+		const [response, playersResponse] = await Promise.all([
+			fetch('/api/commands', { headers: { 'content-type': 'application/json' } }),
+			fetch('/api/players', { headers: { 'content-type': 'application/json' } })
+		]);
+		if (!response.ok) {
+			void goto(`/terminal${window.location.search}`);
+			return;
 		}
-	}
-
-	async function signIn() {
-		error = '';
-		try {
-			await api('/api/login', { method: 'POST', body: JSON.stringify({ password }) });
-			password = '';
-			await refresh();
-		} catch (reason) {
-			error = reason instanceof Error ? reason.message : 'No se pudo iniciar sesión.';
+		const body = (await response.json()) as { logs: { lines: ConsoleLine[] }; health: { bedrockRunning: boolean } };
+		logs = body.logs.lines;
+		bedrockRunning = body.health.bedrockRunning === true;
+		localDevelopment = body.health.localDevelopment === true;
+		if (playersResponse.ok) {
+			playerSnapshot = (await playersResponse.json()) as PlayerSnapshot;
+			playersError = '';
+		} else {
+			const playersBody = (await playersResponse.json().catch(() => ({}))) as { error?: string };
+			playerSnapshot = null;
+			playersError = playersBody.error ?? 'La consulta de jugadores no está disponible todavía.';
 		}
-	}
-
-	async function submit() {
-		if (!command.trim() || sending) return;
-		sending = true;
-		error = '';
-		try {
-			await api('/api/commands', { method: 'POST', body: JSON.stringify({ command }) });
-			command = '';
-			await refresh();
-		} catch (reason) {
-			error = reason instanceof Error ? reason.message : 'No se pudo enviar el comando.';
-		} finally {
-			sending = false;
-		}
-	}
-
-	async function signOut() {
-		await api('/api/logout', { method: 'POST' });
-		authenticated = false;
-			logs = [];
-			bedrockRunning = false;
+		loading = false;
 	}
 
 	onMount(() => {
+		localPreview = import.meta.env.DEV && new URLSearchParams(window.location.search).has('preview');
+		if (localPreview) {
+			terminalHref = '/terminal?preview=1';
+			bedrockRunning = true;
+			localDevelopment = true;
+			logs = [
+				{ id: 1, at: new Date().toISOString(), text: '[Server] Local dashboard preview ready.' },
+				{ id: 2, at: new Date().toISOString(), text: '[Server] No connection to staging was made.' }
+			];
+			loading = false;
+			return;
+		}
 		void refresh();
-		const timer = window.setInterval(() => authenticated && void refresh(), 2500);
-		return () => window.clearInterval(timer);
+		const refreshWhenVisible = () => { if (!document.hidden) void refresh(); };
+		document.addEventListener('visibilitychange', refreshWhenVisible);
+		const timer = window.setInterval(refreshWhenVisible, 15000);
+		return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', refreshWhenVisible); };
 	});
 </script>
 
-{#if loading}
-	<main class="shell"><p>Abriendo consola privada…</p></main>
-{:else if !authenticated}
-	<main class="shell login">
-		<section>
-			<p class="eyebrow">SPB · ADMINISTRACIÓN</p>
-			<h1>Consola privada</h1>
-			<p>Inicia sesión para administrar el entorno de staging.</p>
-			<form
-				onsubmit={(event) => {
-					event.preventDefault();
-					void signIn();
-				}}
-			>
-				<label
-					>Contraseña <input
-						bind:value={password}
-						type="password"
-						autocomplete="current-password"
-					/></label
-				>
-				<button type="submit">Entrar</button>
-			</form>
-			{#if error}<p class="error">{error}</p>{/if}
-		</section>
-	</main>
-{:else}
-	<main class="shell">
-		<header>
-			<div>
-				<p class="eyebrow">SPB · CONSOLA</p>
-				<h1>Staging</h1>
+<main class="dark min-h-svh bg-background text-foreground">
+	{#if loading}
+		<div class="grid min-h-svh place-items-center text-sm text-muted-foreground"><Activity class="mr-2 inline size-4 animate-pulse" /> Cargando panel…</div>
+	{:else}
+		<header class="border-b">
+			<div class="mx-auto flex h-16 w-full max-w-6xl items-center gap-3 px-4 md:px-6">
+				<div class="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground"><Server class="size-4" /></div>
+				<div class="min-w-0"><p class="truncate text-sm font-semibold">SPB</p><p class="truncate text-xs text-muted-foreground">Panel de administración</p></div>
+				<div class="ml-auto hidden items-center gap-2 md:flex"><Badge variant={localDevelopment ? 'outline' : bedrockRunning ? 'default' : 'destructive'}>{localDevelopment ? 'Vista local' : bedrockRunning ? 'Staging en línea' : 'Staging sin conexión'}</Badge><Button variant="outline" size="sm" href="/members"><UsersRound /> Miembros</Button><Button variant="outline" size="sm" href="/blocks"><Blocks /> Bloques</Button><Button variant="outline" size="sm" href="/server"><Settings /> Servidor</Button><Button size="sm" onclick={() => void goto(terminalHref)}><Terminal /> Terminal</Button></div>
+				<Button class="ml-auto md:hidden" variant="outline" size="icon-sm" aria-label="Abrir navegación" onclick={() => mobileNavOpen = true}><Menu /></Button>
 			</div>
-			<div class:online={bedrockRunning} class="badge">{bedrockRunning ? 'En línea' : 'Sin conexión'}</div>
-			<button class="ghost" onclick={() => void signOut()}>Salir</button>
 		</header>
+		<Sheet.Root bind:open={mobileNavOpen}>
+			<Sheet.Content side="right" class="w-[min(20rem,calc(100vw-1.5rem))] p-5">
+				<Sheet.Header><Sheet.Title>Navegación</Sheet.Title><Sheet.Description>Panel de administración de staging.</Sheet.Description></Sheet.Header>
+				<div class="mt-2"><Badge variant={localDevelopment ? 'outline' : bedrockRunning ? 'default' : 'destructive'}>{localDevelopment ? 'Vista local' : bedrockRunning ? 'Staging en línea' : 'Staging sin conexión'}</Badge></div>
+				<nav class="mt-3 grid gap-2" aria-label="Navegación principal">
+					<Button class="justify-start" variant="outline" onclick={() => { mobileNavOpen = false; void goto('/members'); }}><UsersRound /> Miembros</Button>
+					<Button class="justify-start" variant="outline" onclick={() => { mobileNavOpen = false; void goto('/blocks'); }}><Blocks /> Bloques</Button>
+					<Button class="justify-start" variant="outline" onclick={() => { mobileNavOpen = false; void goto('/server'); }}><Settings /> Servidor</Button>
+					<Button class="justify-start" onclick={() => { mobileNavOpen = false; void goto(terminalHref); }}><Terminal /> Terminal</Button>
+				</nav>
+			</Sheet.Content>
+		</Sheet.Root>
 
-		<section class="terminal" aria-label="Enviar comando">
-			<label for="command">Comando de Minecraft</label>
-			<div class="entry">
-				<span>›</span><input
-					id="command"
-					bind:value={command}
-					onkeydown={(event) => event.key === 'Enter' && void submit()}
-					placeholder="say Hola desde la consola"
-					autocomplete="off"
-				/><button onclick={() => void submit()} disabled={sending}
-					>{sending ? 'Enviando…' : 'Enviar'}</button
-				>
-			</div>
-			<p>Se envía texto libre a staging. No tiene acceso a Linux ni a producción.</p>
-		</section>
+		<div class="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 md:px-6 md:py-10">
+			<section class="flex flex-col justify-between gap-4 md:flex-row md:items-end">
+				<div class="space-y-2"><p class="text-sm text-muted-foreground">Resumen operativo</p><h1 class="text-3xl font-semibold tracking-tight md:text-4xl">Tu mundo, de un vistazo.</h1><p class="max-w-2xl text-sm text-muted-foreground">Este panel muestra el estado de staging y concentra las futuras herramientas de administración. Los comandos viven en su propia terminal.</p></div>
+				<Button variant="outline" onclick={() => void refresh()} disabled={localPreview}><Activity /> Actualizar</Button>
+			</section>
 
-		{#if error}<p class="error">{error}</p>{/if}
-		<section class="history" aria-live="polite">
-			<div class="section-title">
-				<h2>Salida real del servidor</h2>
-				<span>Últimas {logs.length} líneas · actualiza automáticamente</span>
-			</div>
-			{#if logs.length === 0}
-				<p class="empty">Aún no hay salida disponible del servidor.</p>
-			{:else}
-				<div class="log-output">
-					{#each logs as line (line.id)}
-						<div><time>{new Date(line.at).toLocaleTimeString()}</time><code>{line.text}</code></div>
-					{/each}
-				</div>
-			{/if}
-		</section>
-	</main>
-{/if}
+		<section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+				<Card.Root><Card.Header class="pb-3"><Card.Description>Entorno activo</Card.Description><Card.Title class="flex items-center gap-2 text-2xl"><Cloud class="size-5" /> {localDevelopment ? 'Vista local' : 'Staging'}</Card.Title></Card.Header><Card.Content class="text-sm text-muted-foreground">{localDevelopment ? 'Datos simulados; no existe conexión al servidor.' : 'Aislado de producción para probar add-ons, mundos y comandos.'}</Card.Content></Card.Root>
+				<Card.Root><Card.Header class="pb-3"><Card.Description>Servidor Bedrock</Card.Description><Card.Title class="flex items-center gap-2 text-2xl"><Activity class="size-5" /> {bedrockRunning ? 'Operativo' : 'Detenido'}</Card.Title></Card.Header><Card.Content class="text-sm text-muted-foreground">El estado se actualiza automáticamente cada cinco segundos.</Card.Content></Card.Root>
+				<Card.Root><Card.Header class="pb-3"><Card.Description>Salida disponible</Card.Description><Card.Title class="text-2xl">{logs.length} líneas</Card.Title></Card.Header><Card.Content class="text-sm text-muted-foreground">Buffer actual recibido desde el bridge local del servidor.</Card.Content></Card.Root>
+				<Card.Root><Card.Header class="pb-3"><Card.Description>Jugadores en línea</Card.Description><Card.Title class="flex items-center gap-2 text-2xl"><Activity class="size-5" /> {playerSnapshot?.online ?? '—'}{#if playerSnapshot?.capacity !== undefined}<span class="text-base font-normal text-muted-foreground">/ {playerSnapshot.capacity}</span>{/if}</Card.Title></Card.Header><Card.Content class="text-sm text-muted-foreground">{#if playerSnapshot}{playerSnapshot.players.length ? playerSnapshot.players.join(', ') : 'No hay jugadores conectados.'}{:else}{playersError || 'Pendiente de consulta.'}{/if}</Card.Content></Card.Root>
+			</section>
 
-<style>
-	:global(*) {
-		box-sizing: border-box;
-	}
-	:global(body) {
-		margin: 0;
-		background: #10130f;
-		color: #edf2e9;
-		font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-	}
-	.shell {
-		width: min(920px, calc(100% - 32px));
-		margin: 0 auto;
-		padding: 64px 0;
-	}
-	.login {
-		min-height: 100svh;
-		display: grid;
-		place-items: center;
-		padding: 24px;
-	}
-	.login section {
-		width: min(420px, 100%);
-		background: #1b2119;
-		border: 1px solid #354432;
-		border-radius: 18px;
-		padding: 32px;
-	}
-	.eyebrow {
-		color: #a9d38f;
-		font-size: 0.76rem;
-		font-weight: 800;
-		letter-spacing: 0.13em;
-		margin: 0 0 8px;
-	}
-	h1 {
-		margin: 0;
-		font-size: clamp(2rem, 8vw, 3.25rem);
-		letter-spacing: -0.05em;
-	}
-	form,
-	.entry {
-		display: flex;
-		gap: 10px;
-		margin-top: 24px;
-	}
-	label {
-		display: grid;
-		gap: 7px;
-		font-weight: 700;
-	}
-	form label {
-		flex: 1;
-	}
-	input {
-		width: 100%;
-		background: #0e120d;
-		color: inherit;
-		border: 1px solid #51664b;
-		border-radius: 9px;
-		padding: 13px;
-		font: inherit;
-		outline-offset: 2px;
-	}
-	button {
-		background: #b7e49e;
-		color: #162014;
-		border: 0;
-		border-radius: 9px;
-		padding: 0 17px;
-		font: inherit;
-		font-weight: 800;
-		cursor: pointer;
-	}
-	button:disabled {
-		opacity: 0.55;
-		cursor: wait;
-	}
-	header {
-		display: flex;
-		align-items: center;
-		gap: 12px;
-		margin-bottom: 32px;
-	}
-	.badge {
-		margin-left: auto;
-		color: #ffd17d;
-		background: #342817;
-		padding: 7px 10px;
-		border-radius: 99px;
-		font-size: 0.82rem;
-		font-weight: 700;
-	}
-	.badge.online {
-		color: #b9ed9d;
-		background: #17351c;
-	}
-	.ghost {
-		background: transparent;
-		border: 1px solid #53604e;
-		color: #dbe6d5;
-		padding: 8px 12px;
-	}
-	.terminal,
-	.history {
-		background: #1b2119;
-		border: 1px solid #354432;
-		border-radius: 14px;
-		padding: 22px;
-	}
-	.entry {
-		margin: 10px 0;
-		align-items: center;
-		background: #0e120d;
-		border: 1px solid #51664b;
-		border-radius: 9px;
-		padding-left: 14px;
-		color: #a9d38f;
-		font:
-			1rem ui-monospace,
-			monospace;
-	}
-	.entry input {
-		border: 0;
-		background: transparent;
-		padding-left: 4px;
-	}
-	.entry button {
-		align-self: stretch;
-		border-radius: 0 8px 8px 0;
-	}
-	.terminal p,
-	small,
-	.section-title span {
-		color: #aeb7a9;
-		font-size: 0.86rem;
-	}
-	.history {
-		margin-top: 18px;
-	}
-	.section-title {
-		display: flex;
-		justify-content: space-between;
-		align-items: baseline;
-		gap: 12px;
-	}
-	h2 {
-		margin: 0 0 16px;
-		font-size: 1.05rem;
-	}
-	.log-output {
-		max-height: 480px;
-		overflow: auto;
-		background: #0e120d;
-		border: 1px solid #303a2d;
-		border-radius: 8px;
-		padding: 10px;
-	}
-	.log-output div {
-		display: grid;
-		grid-template-columns: auto 1fr;
-		gap: 10px;
-		padding: 3px 0;
-	}
-	.log-output time {
-		color: #78926c;
-		font:
-			0.84rem ui-monospace,
-			monospace;
-	}
-	.log-output code {
-		white-space: pre-wrap;
-		word-break: break-word;
-		color: #cbd6c4;
-		font: 0.84rem ui-monospace, monospace;
-	}
-	.error {
-		color: #ffc0b5;
-		margin-top: 14px;
-	}
-	.empty {
-		color: #aeb7a9;
-	}
-	@media (max-width: 600px) {
-		.shell {
-			padding-top: 32px;
-		}
-		header {
-			align-items: flex-start;
-			flex-wrap: wrap;
-		}
-		.badge {
-			margin-left: 0;
-		}
-		.entry {
-			flex-wrap: wrap;
-			padding: 8px 8px 8px 14px;
-		}
-		.entry input {
-			width: calc(100% - 24px);
-		}
-		.entry button {
-			border-radius: 8px;
-			padding: 12px 17px;
-			margin-left: auto;
-		}
-	}
-</style>
+			<section class="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
+				<Card.Root><Card.Header><Card.Title>Actividad reciente</Card.Title><Card.Description>La última salida visible del servidor de staging.</Card.Description></Card.Header><Card.Content><div class="rounded-lg border bg-black/30 p-4 font-mono text-sm text-foreground/90">{lastLog}</div></Card.Content><Card.Footer><Button variant="outline" onclick={() => void goto(terminalHref)}>Abrir salida completa <ArrowRight /></Button></Card.Footer></Card.Root>
+				<Card.Root><Card.Header><Card.Title class="flex items-center gap-2"><ShieldCheck class="size-5" /> Límites de seguridad</Card.Title><Card.Description>El panel está diseñado para administrar staging sin convertirlo en una puerta a producción.</Card.Description></Card.Header><Card.Content class="space-y-3 text-sm text-muted-foreground"><div><p class="font-medium text-foreground">Producción separada</p><p>Esta sesión no envía comandos a producción.</p></div><Separator.Root /><div><p class="font-medium text-foreground">Bridge local</p><p>La consola se comunica por el túnel configurado, no por un puerto público de administración.</p></div></Card.Content></Card.Root>
+			</section>
+
+		</div>
+	{/if}
+</main>

@@ -4,6 +4,15 @@ const encoder = new TextEncoder();
 const COOKIE = 'spb_console_session';
 const MAX_AGE_SECONDS = 60 * 60 * 12;
 
+function localPassword() {
+	return import.meta.env.DEV ? process.env.CONSOLE_PASSWORD : undefined;
+}
+
+function sessionSecret() {
+	const password = localPassword();
+	return password ? `${password}:local-session` : env.SESSION_SECRET;
+}
+
 function equalBytes(left: Uint8Array, right: Uint8Array) {
 	if (left.length !== right.length) return false;
 	let difference = 0;
@@ -27,7 +36,7 @@ function fromBase64url(value: string) {
 async function sign(value: string) {
 	const key = await crypto.subtle.importKey(
 		'raw',
-		encoder.encode(env.SESSION_SECRET),
+		encoder.encode(sessionSecret()),
 		{ name: 'HMAC', hash: 'SHA-256' },
 		false,
 		['sign']
@@ -66,7 +75,8 @@ export async function isAuthenticated(request: Request) {
 }
 
 export async function login(password: string) {
-	if (!password || !equalBytes(encoder.encode(password), encoder.encode(env.ADMIN_PASSWORD)))
+	const configuredPassword = localPassword() ?? env.ADMIN_PASSWORD;
+	if (!password || !equalBytes(encoder.encode(password), encoder.encode(configuredPassword)))
 		return null;
 	const expires = String(Date.now() + MAX_AGE_SECONDS * 1000);
 	const nonce = crypto.randomUUID();
@@ -75,11 +85,13 @@ export async function login(password: string) {
 }
 
 export function sessionCookie(value: string) {
-	return `${COOKIE}=${value}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${MAX_AGE_SECONDS}`;
+	const secure = import.meta.env.DEV ? '' : '; Secure';
+	return `${COOKIE}=${value}; HttpOnly${secure}; SameSite=Strict; Path=/; Max-Age=${MAX_AGE_SECONDS}`;
 }
 
 export function expiredSessionCookie() {
-	return `${COOKIE}=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0`;
+	const secure = import.meta.env.DEV ? '' : '; Secure';
+	return `${COOKIE}=; HttpOnly${secure}; SameSite=Strict; Path=/; Max-Age=0`;
 }
 
 export function hasServerToken(request: Request) {

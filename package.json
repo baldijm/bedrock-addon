@@ -9,6 +9,8 @@
     "watch": "tsc -p tsconfig.json --watch",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "mcaddon": "npm run build && node tools/package-mcaddon.mjs",
+
+    "blocks:catalog": "node tools/generate-block-catalog.mjs",
     "lint": "eslint src/scripts/**/*.ts",
     "lint:fix": "npm run lint -- --fix",
     "format": "prettier --write \"src/**/*.{ts,json}\" \"BP/**/*.{json,lang,mcfunction}\" \"RP/**/*.{json,lang}\"",
