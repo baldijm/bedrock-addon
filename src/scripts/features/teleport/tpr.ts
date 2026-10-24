@@ -1,10 +1,9 @@
-import { system, type Player, world } from '@minecraft/server';
+import { system, type Dimension, type Player, world } from '@minecraft/server';
 
 const DISTANCIA_MINIMA = 300;
 const DISTANCIA_MAXIMA = 2500;
 const MAX_INTENTOS = 6;
 const MAX_ESPERA_TICKS = 100;
-const RADIO_CARGA = 16;
 const CUENTA_REGRESIVA_SEGUNDOS = 5;
 const TELETRANSPORTES_EN_CURSO = new Set<string>();
 const BLOQUES_PELIGROSOS = new Set([
@@ -33,26 +32,72 @@ function coordenadasAleatorias(): { x: number; z: number } {
   };
 }
 
-/** Muestra el tiempo de preparación sin añadir espera si el chunk tarda más. */
+/** La barra de acción no crea la banda visual de título/subtítulo. */
 async function mostrarCuentaRegresiva(player: Player): Promise<boolean> {
-  try {
-    player.onScreenDisplay.setTitle(' ', {
-      subtitle: `§e${CUENTA_REGRESIVA_SEGUNDOS}`,
-      fadeInDuration: 0,
-      stayDuration: (CUENTA_REGRESIVA_SEGUNDOS + 1) * 20,
-      fadeOutDuration: 0,
-    });
-
-    for (let restantes = CUENTA_REGRESIVA_SEGUNDOS - 1; restantes >= 1; restantes -= 1) {
-      await esperar(20);
-      if (!player.isValid) return false;
-      player.onScreenDisplay.updateSubtitle(`§e${restantes}`);
+  for (let restantes = CUENTA_REGRESIVA_SEGUNDOS; restantes >= 1; restantes -= 1) {
+    if (!player.isValid) return false;
+    try {
+      player.onScreenDisplay.setActionBar(`§e${restantes}`);
+    } catch {
+      // El teletransporte no depende de que la interfaz esté disponible.
     }
     await esperar(20);
-    return player.isValid;
-  } catch {
-    return player.isValid;
   }
+  return player.isValid;
+}
+
+function protegerDuranteCarga(player: Player): void {
+  try {
+    player.addEffect('minecraft:slow_falling', 20 * 12, { showParticles: false });
+    player.addEffect('minecraft:resistance', 20 * 12, { amplifier: 4, showParticles: false });
+  } catch {
+    // La altura temporal y los reintentos siguen evitando una caída larga.
+  }
+}
+
+async function esperarChunkCargado(
+  player: Player,
+  dimension: Dimension,
+  x: number,
+  z: number,
+  alturaTemporal: number,
+): Promise<boolean> {
+  for (let transcurridos = 0; transcurridos < MAX_ESPERA_TICKS; transcurridos += 2) {
+    await esperar(2);
+    if (!player.isValid || player.dimension.id !== dimension.id) return false;
+    if (dimension.isChunkLoaded({ x, y: 64, z })) return true;
+    try {
+      player.teleport(
+        { x: x + 0.5, y: alturaTemporal, z: z + 0.5 },
+        { dimension, checkForBlocks: false, keepVelocity: false },
+      );
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+function encontrarDestinoSeguro(
+  dimension: Dimension,
+  x: number,
+  z: number,
+): { x: number; y: number; z: number } | undefined {
+  const superficie = dimension.getTopmostBlock({ x, z });
+  if (
+    !superficie ||
+    superficie.isAir ||
+    superficie.isLiquid ||
+    BLOQUES_PELIGROSOS.has(superficie.typeId)
+  ) return undefined;
+
+  const destinoX = superficie.location.x;
+  const destinoZ = superficie.location.z;
+  const y = superficie.location.y + 1;
+  const pies = dimension.getBlock({ x: destinoX, y, z: destinoZ });
+  const cabeza = dimension.getBlock({ x: destinoX, y: y + 1, z: destinoZ });
+  if (!pies?.isAir || !cabeza?.isAir) return undefined;
+  return { x: destinoX + 0.5, y, z: destinoZ + 0.5 };
 }
 
 async function buscarDestino(player: Player): Promise<void> {
@@ -62,64 +107,47 @@ async function buscarDestino(player: Player): Promise<void> {
     return;
   }
 
-  player.sendMessage('§eBuscando un destino seguro…');
-  const cuentaRegresiva = mostrarCuentaRegresiva(player);
+  const origen = { ...player.location };
+  const alturaTemporal = dimension.heightRange.max - 2;
+  const primerIntento = coordenadasAleatorias();
+  player.sendMessage('§eTeletransportando…');
+
+  if (!await mostrarCuentaRegresiva(player) || player.dimension.id !== dimension.id) return;
+  protegerDuranteCarga(player);
 
   for (let intento = 0; intento < MAX_INTENTOS; intento += 1) {
-    const { x, z } = coordenadasAleatorias();
-    const nombreArea = `spb_tpr_${player.id.replace(/[^a-zA-Z0-9_]/g, '').slice(-8)}_${intento}`;
-    let areaCreada = false;
+    const { x, z } = intento === 0 ? primerIntento : coordenadasAleatorias();
     try {
-      dimension.runCommand(
-        `tickingarea add ${x - RADIO_CARGA} 0 ${z - RADIO_CARGA} ${x + RADIO_CARGA} 0 ${z + RADIO_CARGA} ${nombreArea} true`,
+      // Este primer salto hace que Bedrock cargue el chunk en esas X/Z.
+      player.teleport(
+        { x: x + 0.5, y: alturaTemporal, z: z + 0.5 },
+        { dimension, checkForBlocks: false, keepVelocity: false },
       );
-      areaCreada = true;
+      if (!await esperarChunkCargado(player, dimension, x, z, alturaTemporal)) continue;
 
-      for (let transcurridos = 0; transcurridos < MAX_ESPERA_TICKS; transcurridos += 2) {
-        await esperar(2);
-        if (!player.isValid || player.dimension.id !== dimension.id) return;
-        if (!dimension.isChunkLoaded({ x, y: 64, z })) continue;
-
-        const superficie = dimension.getTopmostBlock({ x, z });
-        if (
-          !superficie ||
-          superficie.isAir ||
-          superficie.isLiquid ||
-          BLOQUES_PELIGROSOS.has(superficie.typeId)
-        ) break;
-
-        const destinoX = superficie.location.x;
-        const destinoZ = superficie.location.z;
-        const y = superficie.location.y + 1;
-        const pies = dimension.getBlock({ x: destinoX, y, z: destinoZ });
-        const cabeza = dimension.getBlock({ x: destinoX, y: y + 1, z: destinoZ });
-        if (!pies?.isAir || !cabeza?.isAir) break;
-
-        if (!await cuentaRegresiva || !player.isValid || player.dimension.id !== dimension.id) return;
-
-        if (player.tryTeleport(
-          { x: destinoX + 0.5, y, z: destinoZ + 0.5 },
-          { dimension, checkForBlocks: true, keepVelocity: false },
-        )) {
-          player.sendMessage('§aTe teletransportaste a una ubicación segura.');
-          return;
+      const destino = encontrarDestinoSeguro(dimension, x, z);
+      if (!destino) continue;
+      if (player.tryTeleport(destino, { dimension, checkForBlocks: true, keepVelocity: false })) {
+        try {
+          player.onScreenDisplay.setActionBar('§aUbicación segura.');
+        } catch {
+          // No afecta el resultado del TPR.
         }
-        break;
+        player.sendMessage('§aTe teletransportaste a una ubicación segura.');
+        return;
       }
     } catch {
-      // El destino o su chunk no están listos; se prueba otro sin mover al jugador.
-    } finally {
-      if (areaCreada) {
-        try {
-          dimension.runCommand(`tickingarea remove ${nombreArea}`);
-        } catch {
-          // El servidor pudo eliminar el área durante una recarga.
-        }
-      }
+      // El chunk o el terreno no pudieron confirmarse; se prueba otra columna sin dejar al jugador caer.
     }
   }
 
-  if (player.isValid) player.sendMessage('§cNo se encontró un destino seguro. No se realizó el TPR.');
+  if (!player.isValid || player.dimension.id !== dimension.id) return;
+  try {
+    player.teleport(origen, { dimension, checkForBlocks: true, keepVelocity: false });
+  } catch {
+    // Si el origen dejó de ser válido, la protección temporal aún evita daño de caída.
+  }
+  player.sendMessage('§cNo se encontró un destino seguro. Regresaste a tu posición anterior.');
 }
 
 export function teletransportarAleatoriamente(player: Player): void {
