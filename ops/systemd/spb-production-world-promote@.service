@@ -1,0 +1,15 @@
+[Unit]
+Description=Promote SPB staging world to production (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/local/lib/spb/production-world-promote.py %i
+TimeoutStartSec=30min
+Nice=10
+PrivateTmp=true
+ProtectHome=true
+

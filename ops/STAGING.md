@@ -1,9 +1,11 @@
 # Staging de Minecraft Bedrock
 
-Staging es un servidor efímero de prueba. Su mundo parte de un respaldo
-verificado de producción, pero **nunca** se promueve de vuelta a producción:
-la única promoción admisible es la del código/configuración del add-on que haya
-sido probado.
+Staging es un servidor efímero de prueba. Su mundo puede partir de un respaldo
+verificado de producción. Para casos de mantenimiento inicial existe una
+promoción explícita de mundo completo desde staging: exige confirmación del
+nombre del mundo de producción, respaldo verificable en R2 y rollback local.
+No fusiona progreso; reemplaza el mundo completo y por ello no se usa como
+sincronización cotidiana de jugadores.
 
 ## Aislamiento actual
 

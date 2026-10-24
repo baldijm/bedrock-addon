@@ -10,12 +10,24 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
+from pathlib import Path
+import re
 import subprocess
 from urllib.parse import urlparse
+import uuid
 
 
 SERVICE = "bedrock.service"
 MAX_LOG_LINES = 300
+ROOT = Path("/opt/bedrock")
+PROMOTION_STATUS = Path("/var/lib/spb/production-world-promotion/status.json")
+PROMOTION_UNIT = "spb-production-world-promote@{}.service"
+SAFE_PROPERTIES = {
+    "server-name", "level-name", "gamemode", "difficulty", "max-players",
+    "view-distance", "tick-distance", "allow-cheats", "allow-list",
+    "default-player-permission-level", "player-idle-timeout", "showcoordinates",
+    "online-mode", "transport", "server-port", "texturepack-required",
+}
 
 
 def parse_address(value: str) -> tuple[str, int]:
@@ -58,6 +70,45 @@ def bedrock_running() -> bool:
     return subprocess.run(
         ["systemctl", "is-active", "--quiet", SERVICE], check=False, timeout=10
     ).returncode == 0
+
+
+def production_properties() -> dict[str, str]:
+    path = ROOT / "server.properties"
+    if path.is_symlink() or not path.is_file():
+        raise RuntimeError("No se pudo leer server.properties de producción.")
+    properties: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if "=" not in line or line.startswith("#"):
+            continue
+        key, value = line.split("=", 1)
+        if key in SAFE_PROPERTIES:
+            properties[key] = value
+    return properties
+
+
+def promotion_status() -> dict[str, object]:
+    if not PROMOTION_STATUS.exists():
+        return {"state": "idle"}
+    if PROMOTION_STATUS.is_symlink() or not PROMOTION_STATUS.is_file():
+        raise RuntimeError("El estado de promoción no es válido.")
+    parsed = json.loads(PROMOTION_STATUS.read_text(encoding="utf-8"))
+    if not isinstance(parsed, dict):
+        raise RuntimeError("El estado de promoción no es válido.")
+    return parsed
+
+
+def request_promotion(confirmation: object) -> dict[str, object]:
+    properties = production_properties()
+    world = properties.get("level-name", "")
+    if not world or confirmation != world:
+        raise ValueError("Escribe exactamente el nombre del mundo de producción para confirmar.")
+    status = promotion_status()
+    if status.get("state") in {"copying-staging-world", "backing-up-production", "replacing-production-world", "starting-production"}:
+        raise RuntimeError("Ya hay una promoción de mundo en curso.")
+    operation = uuid.uuid4().hex
+    unit = PROMOTION_UNIT.format(operation)
+    subprocess.run(["systemctl", "start", "--no-block", unit], check=True, timeout=15, capture_output=True, text=True)
+    return {"ok": True, "operation": operation, "productionWorld": world, "state": "queued"}
 
 
 class ObserverHTTPServer(ThreadingHTTPServer):
@@ -104,10 +155,41 @@ class ObserverRequestHandler(BaseHTTPRequestHandler):
             lines = journal_lines()
             self.send_json(HTTPStatus.OK, {"lines": lines, "cursor": len(lines)})
             return
+        if path == "/properties":
+            try:
+                self.send_json(HTTPStatus.OK, {"environment": "production", "readOnly": True, "properties": production_properties()})
+            except RuntimeError as error:
+                self.send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": str(error)})
+            return
+        if path == "/world/promotion":
+            try:
+                self.send_json(HTTPStatus.OK, promotion_status())
+            except RuntimeError as error:
+                self.send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": str(error)})
+            return
         self.send_json(HTTPStatus.NOT_FOUND, {"error": "No existe esa ruta."})
 
     def do_POST(self) -> None:  # noqa: N802
-        self.send_json(HTTPStatus.METHOD_NOT_ALLOWED, {"error": "Producción está disponible sólo en lectura."})
+        if not self.authorized():
+            self.send_json(HTTPStatus.UNAUTHORIZED, {"error": "No autorizado."})
+            return
+        if urlparse(self.path).path != "/world/promotion":
+            self.send_json(HTTPStatus.METHOD_NOT_ALLOWED, {"error": "Producción está disponible sólo en lectura."})
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length <= 0 or length > 1024:
+                raise ValueError("Solicitud de promoción inválida.")
+            body = json.loads(self.rfile.read(length))
+            if not isinstance(body, dict):
+                raise ValueError("Solicitud de promoción inválida.")
+            self.send_json(HTTPStatus.ACCEPTED, request_promotion(body.get("confirmation")))
+        except ValueError as error:
+            self.send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+        except subprocess.SubprocessError:
+            self.send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": "No se pudo iniciar la promoción."})
+        except RuntimeError as error:
+            self.send_json(HTTPStatus.CONFLICT, {"error": str(error)})
 
 
 def main() -> int:

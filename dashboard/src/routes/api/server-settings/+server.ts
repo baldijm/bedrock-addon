@@ -25,7 +25,14 @@ function isLocalDevelopment() {
 export const GET: RequestHandler = async ({ request }) => {
 	if (!(await isAuthenticated(request))) return unauthorized();
 	const environment = resolveEnvironment(request);
-	if (environment === 'production') return json({ environment, readOnly: true, error: 'La configuración de producción todavía no se expone desde el observador.' });
+	if (environment === 'production') {
+		try {
+			const result = await bridgeRequest('production', '/properties') as { properties?: typeof localProperties };
+			return json({ environment, readOnly: true, properties: result.properties ?? {} });
+		} catch (error) {
+			return json({ environment, readOnly: true, error: error instanceof Error ? error.message : 'No se pudo leer la configuración de producción.' }, 503);
+		}
+	}
 	if (isLocalDevelopment()) return json({ environment: 'local-development', properties: localProperties, activeProperties: localProperties, gameRules: { showCoordinates: false }, hasPendingChanges: false, restartRequired: true });
 	try {
 		const [properties, gameRules] = await Promise.all([

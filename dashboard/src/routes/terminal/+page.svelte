@@ -25,6 +25,12 @@
 	let bedrockRunning = $state(false);
 	let localDevelopment = $state(false);
 	let environment = $state<'staging' | 'production'>('staging');
+	let returnTo = $state('/terminal');
+
+	function requestedReturnTo() {
+		const candidate = new URLSearchParams(window.location.search).get('returnTo') ?? '/terminal';
+		return candidate.startsWith('/') && !candidate.startsWith('//') ? candidate : '/terminal';
+	}
 
 	function isLocalPreview() {
 		return import.meta.env.DEV && typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('preview');
@@ -69,8 +75,7 @@
 		try {
 			await api('/api/login', { method: 'POST', body: JSON.stringify({ password }) });
 			password = '';
-			authenticated = true;
-			await refresh();
+			location.replace(returnTo);
 		} catch (reason) {
 			error = reason instanceof Error ? reason.message : 'No se pudo iniciar sesión.';
 		}
@@ -97,6 +102,7 @@
 	}
 
 	onMount(() => {
+		returnTo = requestedReturnTo();
 		if (isLocalPreview()) {
 			authenticated = true;
 			bedrockRunning = true;
