@@ -15,6 +15,9 @@ RuntimeDirectory=spb-staging-bridge
 RuntimeDirectoryMode=0755
 RuntimeDirectoryPreserve=restart
 ExecStart=/usr/bin/python3 /usr/local/lib/spb/bedrock-console-bridge.py --root /opt/bedrock-staging --listen 127.0.0.1:3002 --state-file /run/spb-staging-bridge/bedrock.pid
+# The lifecycle controller is ordered after this unit.  Keep its start job in
+# progress until the bridge has spawned Bedrock and installed its signal paths.
+ExecStartPost=/usr/bin/test -s /run/spb-staging-bridge/bedrock.pid
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=75

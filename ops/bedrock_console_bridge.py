@@ -659,8 +659,6 @@ def main() -> int:
 
     output = OutputBuffer()
     bridge = BedrockConsoleBridge(arguments.root, output, arguments.state_file)
-    if not arguments.state_file.with_name("desired-stopped").exists():
-        bridge.start()
     server = BridgeHTTPServer(arguments.listen, bridge, token, output)
 
     def stop(_signum: int, _frame: object) -> None:
@@ -686,6 +684,8 @@ def main() -> int:
         ).start(),
     )
     signal.pthread_sigmask(signal.SIG_UNBLOCK, lifecycle_signals)
+    if not arguments.state_file.with_name("desired-stopped").exists():
+        bridge.start()
     try:
         server.serve_forever(poll_interval=0.5)
     finally:
