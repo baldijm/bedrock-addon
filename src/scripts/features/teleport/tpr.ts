@@ -15,7 +15,6 @@ const BLOQUES_PELIGROSOS = new Set([
   'minecraft:fire',
   'minecraft:magma',
   'minecraft:pointed_dripstone',
-  'minecraft:powder_snow',
   'minecraft:soul_campfire',
   'minecraft:sweet_berry_bush',
 ]);
@@ -124,7 +123,9 @@ function encontrarDestinoSeguro(
   if (
     !superficie ||
     superficie.isAir ||
-    superficie.isLiquid ||
+    // El bloque superior de agua es un aterrizaje permitido: el jugador
+    // aparece justo encima de la superficie, nunca dentro del océano.
+    (superficie.isLiquid && superficie.typeId !== 'minecraft:water') ||
     BLOQUES_PELIGROSOS.has(superficie.typeId)
   ) return undefined;
 

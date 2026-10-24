@@ -95,7 +95,7 @@ test('TPR scans a nearby loaded grid before making another high teleport', async
   const run = runTpr(() => {
     calls += 1;
     if (calls === 1) {
-      return { typeId: 'minecraft:water', isAir: false, isLiquid: true, location: { x: 100, y: 62, z: 100 } };
+      return { typeId: 'minecraft:lava', isAir: false, isLiquid: true, location: { x: 100, y: 62, z: 100 } };
     }
     return { typeId: 'minecraft:grass_block', isAir: false, isLiquid: false, location: { x: 101, y: 70, z: 100 } };
   });
@@ -104,6 +104,23 @@ test('TPR scans a nearby loaded grid before making another high teleport', async
   assert.equal(run.moves.length, 2);
   assert.equal(run.moves[1].type, 'landing');
 });
+
+for (const [nombre, bloque, liquido] of [
+  ['agua superficial', 'minecraft:water', true],
+  ['powder snow', 'minecraft:powder_snow', false],
+]) {
+  test(`TPR permite ${nombre} como superficie de destino`, async () => {
+    const run = runTpr(() => ({
+      typeId: bloque,
+      isAir: false,
+      isLiquid: liquido,
+      location: { x: 412, y: 70, z: -381 },
+    }));
+    assert.equal(await run.result, '');
+    assert.equal(run.moves.at(-1).type, 'landing');
+    assert.deepEqual(JSON.parse(JSON.stringify(run.moves.at(-1).location)), { x: 412.5, y: 71, z: -380.5 });
+  });
+}
 
 test('TPR keeps the player elevated until the destination chunk becomes available', async () => {
   let terrainQueries = 0;
