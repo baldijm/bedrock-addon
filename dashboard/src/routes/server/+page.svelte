@@ -14,6 +14,7 @@
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
+	import EnvironmentSelector from '#lib/components/EnvironmentSelector.svelte';
 
 	type Properties = Record<string, string>;
 	type Settings = {
@@ -209,7 +210,7 @@
 <svelte:head><title>Servidor · SPB</title></svelte:head>
 
 <main class="dark min-h-svh bg-background text-foreground">
-	<header class="border-b"><div class="mx-auto flex h-16 w-full max-w-5xl items-center gap-3 px-4 md:px-6"><div class="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground"><Server class="size-4" /></div><div><p class="text-sm font-semibold">SPB</p><p class="text-xs text-muted-foreground">Configuración del servidor</p></div><div class="ml-auto flex items-center gap-2"><Badge variant="outline">{localDevelopment ? 'Vista local' : 'Staging'}</Badge><Button variant="outline" size="sm" href="/"><ArrowLeft /> Panel</Button></div></div></header>
+	<header class="border-b"><div class="mx-auto flex h-16 w-full max-w-5xl items-center gap-3 px-4 md:px-6"><div class="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground"><Server class="size-4" /></div><div><p class="text-sm font-semibold">SPB</p><p class="text-xs text-muted-foreground">Configuración del servidor</p></div><div class="ml-auto flex items-center gap-2"><EnvironmentSelector /><Button variant="outline" size="sm" href="/"><ArrowLeft /> Panel</Button></div></div></header>
 	<div class="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 md:px-6 md:py-10">
 		<section class="space-y-2"><p class="text-sm text-muted-foreground">Staging solamente</p><h1 class="text-3xl font-semibold tracking-tight">Servidor</h1><p class="max-w-3xl text-sm text-muted-foreground">Edita propiedades permitidas de Bedrock. Cada guardado crea un respaldo en staging; la mayoría de estas propiedades se aplican al reiniciar staging.</p></section>
 		{#if restartRequested}<Alert.Root><LoaderCircle class="animate-spin" /><Alert.Title>Reinicio de staging en curso</Alert.Title><Alert.Description>La orden ya fue enviada. Bedrock está guardando y arrancará de nuevo con la configuración guardada. Esta página se actualizará automáticamente; no pulses nada de nuevo.</Alert.Description></Alert.Root>{:else if error}<Alert.Root variant="destructive"><TriangleAlert /><Alert.Title>No se pudo completar la operación</Alert.Title><Alert.Description>{error}</Alert.Description></Alert.Root>{/if}

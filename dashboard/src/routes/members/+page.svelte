@@ -9,6 +9,7 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
+	import EnvironmentSelector from '#lib/components/EnvironmentSelector.svelte';
 
 	type PlayerSnapshot = { online: number; capacity: number; players: string[]; observedAt: string; source: string };
 	let loading = $state(true);
@@ -44,7 +45,7 @@
 <svelte:head><title>Miembros · SPB</title></svelte:head>
 
 <main class="dark min-h-svh bg-background text-foreground">
-	<header class="border-b"><div class="mx-auto flex h-16 w-full max-w-5xl items-center gap-3 px-4 md:px-6"><div class="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground"><UsersRound class="size-4" /></div><div class="min-w-0"><p class="truncate text-sm font-semibold">SPB</p><p class="truncate text-xs text-muted-foreground">Miembros</p></div><div class="ml-auto flex items-center gap-2"><Badge variant="outline">Staging</Badge><Button variant="outline" size="sm" href="/"><ArrowLeft /> Panel</Button></div></div></header>
+	<header class="border-b"><div class="mx-auto flex h-16 w-full max-w-5xl items-center gap-3 px-4 md:px-6"><div class="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground"><UsersRound class="size-4" /></div><div class="min-w-0"><p class="truncate text-sm font-semibold">SPB</p><p class="truncate text-xs text-muted-foreground">Miembros</p></div><div class="ml-auto flex items-center gap-2"><EnvironmentSelector /><Button variant="outline" size="sm" href="/"><ArrowLeft /> Panel</Button></div></div></header>
 	<div class="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 md:px-6 md:py-10">
 		<section class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div class="space-y-2"><p class="text-sm text-muted-foreground">Comunidad de staging</p><h1 class="text-3xl font-semibold tracking-tight">Miembros</h1><p class="max-w-2xl text-sm text-muted-foreground">Aquí vivirá el registro de participantes. Por ahora, la lista mostrada es la respuesta real y en vivo de Bedrock.</p></div><Button variant="outline" onclick={() => void load()} disabled={refreshing}>{#if refreshing}<LoaderCircle class="animate-spin" /> Actualizando…{:else}<RefreshCw /> Actualizar{/if}</Button></section>
 		{#if error}<Alert.Root variant="destructive"><Alert.Title>No se pudo consultar a los miembros en línea</Alert.Title><Alert.Description>{error}</Alert.Description></Alert.Root>{/if}

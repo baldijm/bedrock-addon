@@ -26,10 +26,7 @@
 	}
 </script>
 
-<div class="fixed right-3 top-3 z-50 flex items-center gap-2 rounded-lg border bg-background/95 px-2 py-1.5 shadow-lg backdrop-blur sm:right-5 sm:top-5">
-	<span class="hidden text-xs text-muted-foreground sm:inline">Entorno</span>
-	<select aria-label="Entorno global" value={environment} onchange={change} disabled={changing} class="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground">
-		<option value="staging">Staging</option>
-		<option value="production">Producción</option>
-	</select>
-</div>
+<select aria-label="Entorno global" value={environment} onchange={change} disabled={changing} class="h-8 rounded-md border border-input bg-background px-2 text-sm font-medium text-foreground">
+	<option value="staging">Staging</option>
+	<option value="production">Producción</option>
+</select>

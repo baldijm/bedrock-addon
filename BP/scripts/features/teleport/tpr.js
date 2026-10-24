@@ -2,7 +2,8 @@ import { system, world } from '@minecraft/server';
 const DISTANCIA_MINIMA = 300;
 const DISTANCIA_MAXIMA = 2500;
 const MAX_INTENTOS = 6;
-const MAX_ESPERA_TICKS = 40;
+const MAX_ESPERA_TICKS = 100;
+const RADIO_CARGA = 16;
 const TELETRANSPORTES_EN_CURSO = new Set();
 const BLOQUES_PELIGROSOS = new Set([
     'minecraft:cactus',
@@ -17,6 +18,14 @@ const BLOQUES_PELIGROSOS = new Set([
 function esperar(ticks) {
     return new Promise((resolve) => system.runTimeout(resolve, ticks));
 }
+function coordenadasAleatorias() {
+    const angulo = Math.random() * Math.PI * 2;
+    const radio = Math.sqrt(DISTANCIA_MINIMA ** 2 + Math.random() * (DISTANCIA_MAXIMA ** 2 - DISTANCIA_MINIMA ** 2));
+    return {
+        x: Math.floor(Math.cos(angulo) * radio),
+        z: Math.floor(Math.sin(angulo) * radio),
+    };
+}
 async function buscarDestino(player) {
     const dimension = world.getDimension('overworld');
     if (player.dimension.id !== dimension.id) {
@@ -25,39 +34,32 @@ async function buscarDestino(player) {
     }
     player.sendMessage('§eBuscando un destino seguro…');
     for (let intento = 0; intento < MAX_INTENTOS; intento += 1) {
-        let marcador;
+        const { x, z } = coordenadasAleatorias();
+        const nombreArea = `spb_tpr_${player.id.replace(/[^a-zA-Z0-9_]/g, '').slice(-8)}_${intento}`;
+        let areaCreada = false;
         try {
-            const etiqueta = `spb_tpr_${Date.now()}_${Math.floor(Math.random() * 1_000_000)}`;
-            marcador = dimension.spawnEntity('minecraft:armor_stand', player.location);
-            marcador.addTag(etiqueta);
-            dimension.runCommand(`spreadplayers 0 0 ${DISTANCIA_MINIMA} ${DISTANCIA_MAXIMA} @e[type=armor_stand,tag=${etiqueta}]`);
+            dimension.runCommand(`tickingarea add ${x - RADIO_CARGA} 0 ${z - RADIO_CARGA} ${x + RADIO_CARGA} 0 ${z + RADIO_CARGA} ${nombreArea} true`);
+            areaCreada = true;
             for (let transcurridos = 0; transcurridos < MAX_ESPERA_TICKS; transcurridos += 2) {
                 await esperar(2);
                 if (!player.isValid || player.dimension.id !== dimension.id)
                     return;
-                if (!marcador.isValid)
-                    break;
-                const ubicacion = marcador.location;
-                const x = Math.floor(ubicacion.x);
-                const z = Math.floor(ubicacion.z);
                 if (!dimension.isChunkLoaded({ x, y: 64, z }))
                     continue;
-                const superficie = dimension.getBlockBelow({
-                    x,
-                    y: dimension.heightRange.max - 1,
-                    z,
-                });
+                const superficie = dimension.getTopmostBlock({ x, z });
                 if (!superficie ||
                     superficie.isAir ||
                     superficie.isLiquid ||
                     BLOQUES_PELIGROSOS.has(superficie.typeId))
                     break;
+                const destinoX = superficie.location.x;
+                const destinoZ = superficie.location.z;
                 const y = superficie.location.y + 1;
-                const pies = dimension.getBlock({ x, y, z });
-                const cabeza = dimension.getBlock({ x, y: y + 1, z });
+                const pies = dimension.getBlock({ x: destinoX, y, z: destinoZ });
+                const cabeza = dimension.getBlock({ x: destinoX, y: y + 1, z: destinoZ });
                 if (!pies?.isAir || !cabeza?.isAir)
                     break;
-                if (player.tryTeleport({ x: x + 0.5, y, z: z + 0.5 }, { dimension, checkForBlocks: true, keepVelocity: false })) {
+                if (player.tryTeleport({ x: destinoX + 0.5, y, z: destinoZ + 0.5 }, { dimension, checkForBlocks: true, keepVelocity: false })) {
                     player.sendMessage('§aTe teletransportaste a una ubicación segura.');
                     return;
                 }
@@ -68,12 +70,13 @@ async function buscarDestino(player) {
             // El destino o su chunk no están listos; se prueba otro sin mover al jugador.
         }
         finally {
-            try {
-                if (marcador?.isValid)
-                    marcador.remove();
-            }
-            catch {
-                // El marcador puede descargarse al cambiar de chunk.
+            if (areaCreada) {
+                try {
+                    dimension.runCommand(`tickingarea remove ${nombreArea}`);
+                }
+                catch {
+                    // El servidor pudo eliminar el área durante una recarga.
+                }
             }
         }
     }

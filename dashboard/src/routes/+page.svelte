@@ -14,6 +14,7 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
+	import EnvironmentSelector from '#lib/components/EnvironmentSelector.svelte';
 	import * as Separator from '#lib/components/ui/separator/index.js';
 	import * as Sheet from '#lib/components/ui/sheet/index.js';
 
@@ -87,8 +88,8 @@
 			<div class="mx-auto flex h-16 w-full max-w-6xl items-center gap-3 px-4 md:px-6">
 				<div class="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground"><Server class="size-4" /></div>
 				<div class="min-w-0"><p class="truncate text-sm font-semibold">SPB</p><p class="truncate text-xs text-muted-foreground">Panel de administración</p></div>
-				<div class="ml-auto mr-36 hidden items-center gap-2 md:flex"><Badge variant={localDevelopment ? 'outline' : bedrockRunning ? 'default' : 'destructive'}>{localDevelopment ? 'Vista local' : bedrockRunning ? 'En línea' : 'Sin conexión'}</Badge><Button variant="outline" size="sm" href="/members"><UsersRound /> Miembros</Button><Button variant="outline" size="sm" href="/blocks"><Blocks /> Bloques</Button><Button variant="outline" size="sm" href="/server"><Settings /> Servidor</Button><Button size="sm" onclick={() => void goto(terminalHref)}><Terminal /> Terminal</Button></div>
-				<Button class="ml-auto md:hidden" variant="outline" size="icon-sm" aria-label="Abrir navegación" onclick={() => mobileNavOpen = true}><Menu /></Button>
+				<div class="ml-auto hidden items-center gap-2 md:flex"><EnvironmentSelector /><Badge variant={localDevelopment ? 'outline' : bedrockRunning ? 'default' : 'destructive'}>{localDevelopment ? 'Vista local' : bedrockRunning ? 'En línea' : 'Sin conexión'}</Badge><Button variant="outline" size="sm" href="/members"><UsersRound /> Miembros</Button><Button variant="outline" size="sm" href="/blocks"><Blocks /> Bloques</Button><Button variant="outline" size="sm" href="/server"><Settings /> Servidor</Button><Button size="sm" onclick={() => void goto(terminalHref)}><Terminal /> Terminal</Button></div>
+				<div class="ml-auto flex items-center gap-2 md:hidden"><EnvironmentSelector /><Button variant="outline" size="icon-sm" aria-label="Abrir navegación" onclick={() => mobileNavOpen = true}><Menu /></Button></div>
 			</div>
 		</header>
 		<Sheet.Root bind:open={mobileNavOpen}>

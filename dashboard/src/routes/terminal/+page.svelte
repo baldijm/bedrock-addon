@@ -8,6 +8,7 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
+	import EnvironmentSelector from '#lib/components/EnvironmentSelector.svelte';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as ScrollArea from '#lib/components/ui/scroll-area/index.js';
@@ -140,7 +141,7 @@
 		<header class="flex h-14 shrink-0 items-center gap-3 border-b px-4">
 			<div class="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground"><Terminal class="size-4" /></div>
 			<div class="min-w-0"><p class="truncate text-sm font-medium">Terminal de {environment === 'production' ? 'producción' : 'staging'}</p><p class="text-xs text-muted-foreground">{localDevelopment ? 'Vista local simulada' : environment === 'production' ? 'Observador de solo lectura' : 'Salida real de Bedrock'} · {logs.length} líneas</p></div>
-			<div class="ml-auto mr-36 flex shrink-0 items-center gap-2 sm:mr-44"><Badge variant={localDevelopment ? 'outline' : bedrockRunning ? 'default' : 'destructive'}>{localDevelopment ? 'Vista local' : bedrockRunning ? 'En línea' : 'Sin conexión'}</Badge><Button variant="outline" size="sm" href="/"><ArrowLeft /> <span class="hidden sm:inline">Panel</span></Button></div>
+			<div class="ml-auto flex shrink-0 items-center gap-2"><EnvironmentSelector /><Badge variant={localDevelopment ? 'outline' : bedrockRunning ? 'default' : 'destructive'}>{localDevelopment ? 'Vista local' : bedrockRunning ? 'En línea' : 'Sin conexión'}</Badge><Button variant="outline" size="sm" href="/"><ArrowLeft /> <span class="hidden sm:inline">Panel</span></Button></div>
 		</header>
 
 		<section class="min-h-0 flex-1 overflow-hidden" aria-label="Salida del servidor">
