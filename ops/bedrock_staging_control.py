@@ -29,6 +29,8 @@ def set_running(wanted: bool, timeout: int = 75) -> None:
         STOP_MARKER.unlink(missing_ok=True)
     else:
         STOP_MARKER.touch(mode=0o644, exist_ok=True)
+    if child_running() == wanted:
+        return
     signal = "SIGUSR2" if wanted else "SIGUSR1"
     subprocess.run(
         ["/bin/systemctl", "kill", "--kill-who=main", f"--signal={signal}", BRIDGE_SERVICE],

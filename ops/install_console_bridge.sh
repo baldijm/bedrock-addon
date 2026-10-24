@@ -5,10 +5,15 @@ set -eu
 install -d -o root -g root -m 0755 /usr/local/lib/spb
 install -o root -g root -m 0755 /tmp/bedrock_console_bridge.py /usr/local/lib/spb/bedrock-console-bridge.py
 install -o root -g root -m 0755 /tmp/bedrock_staging_control.py /usr/local/lib/spb/bedrock-staging-control.py
+install -o root -g root -m 0755 /tmp/staging_world_reset.py /usr/local/lib/spb/staging-world-reset.py
 install -o root -g root -m 0644 /tmp/spb-staging-bridge.service /etc/systemd/system/spb-staging-bridge.service
 install -o root -g root -m 0644 /tmp/bedrock-staging.service /etc/systemd/system/bedrock-staging.service
+install -o root -g root -m 0644 /tmp/spb-staging-world-reset@.service /etc/systemd/system/spb-staging-world-reset@.service
 install -d -o root -g root -m 0755 /etc/systemd/system/bedrock-staging.service.d
 install -o root -g root -m 0644 /tmp/bedrock-staging-restart.conf /etc/systemd/system/bedrock-staging.service.d/restart.conf
+visudo -cf /tmp/spb-staging-world-reset
+install -o root -g root -m 0440 /tmp/spb-staging-world-reset /etc/sudoers.d/spb-staging-world-reset
+install -d -o bedrock -g bedrock -m 0700 /var/lib/spb/staging-world-reset/requests
 install -d -o root -g root -m 0700 /etc/bedrock-staging-console
 if [ ! -f /etc/bedrock-staging-console/bridge.env ]; then
   echo 'Falta /etc/bedrock-staging-console/bridge.env; no se modificó el servicio.' >&2

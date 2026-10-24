@@ -616,6 +616,12 @@ def parse_address(value: str) -> tuple[str, int]:
 
 
 def main() -> int:
+    # systemd may start the lifecycle controller immediately after this unit.
+    # Block its signals until our handlers exist so an early SIGUSR1/SIGUSR2
+    # becomes pending instead of terminating the Python process.
+    lifecycle_signals = {signal.SIGUSR1, signal.SIGUSR2}
+    signal.pthread_sigmask(signal.SIG_BLOCK, lifecycle_signals)
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", required=True, type=Path)
     parser.add_argument("--listen", required=True, type=parse_address)
@@ -654,6 +660,7 @@ def main() -> int:
             daemon=True,
         ).start(),
     )
+    signal.pthread_sigmask(signal.SIG_UNBLOCK, lifecycle_signals)
     try:
         server.serve_forever(poll_interval=0.5)
     finally:

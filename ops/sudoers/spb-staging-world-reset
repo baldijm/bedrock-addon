@@ -1,1 +1,1 @@
-bedrock ALL=(root) NOPASSWD: /bin/systemctl start spb-staging-world-reset@*.service
+bedrock ALL=(root) NOPASSWD: /bin/systemctl start --no-block spb-staging-world-reset@*.service

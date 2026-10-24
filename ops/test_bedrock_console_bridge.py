@@ -1,8 +1,10 @@
 import unittest
+from tempfile import TemporaryDirectory
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
-from bedrock_console_bridge import BedrockConsoleBridge, OutputBuffer, parse_address, validate_command
+import bedrock_console_bridge as bridge_module
+from bedrock_console_bridge import BedrockConsoleBridge, OutputBuffer, parse_address, request_world_reset, validate_command
 
 
 class ValidateCommandTests(unittest.TestCase):
@@ -43,6 +45,36 @@ class AddressTests(unittest.TestCase):
         self.assertEqual(parse_address("127.0.0.1:3002"), ("127.0.0.1", 3002))
         with self.assertRaises(Exception):
             parse_address("0.0.0.0:3002")
+
+
+class WorldResetPrivilegeTests(unittest.TestCase):
+    def test_sudoers_allows_the_command_used_by_the_bridge(self):
+        rule = (Path(__file__).parent / "sudoers" / "spb-staging-world-reset").read_text(encoding="utf-8")
+        with TemporaryDirectory() as directory:
+            with (
+                patch.object(bridge_module, "WORLD_RESET_REQUESTS", Path(directory)),
+                patch.object(
+                    bridge_module,
+                    "validate_world_reset_request",
+                    return_value={"mode": "random", "seed": "", "world": "Forever World"},
+                ),
+                patch.object(bridge_module.subprocess, "run") as run,
+            ):
+                operation = request_world_reset(Path("/opt/bedrock-staging"), {})
+
+        command = run.call_args.args[0]
+        authorized_command = " ".join(command[1:]).replace(operation, "*")
+        self.assertIn(authorized_command, rule)
+
+    def test_installer_deploys_the_world_reset_worker(self):
+        installer = (Path(__file__).parent / "install_console_bridge.sh").read_text(encoding="utf-8")
+        for required in (
+            "staging_world_reset.py",
+            "spb-staging-world-reset@.service",
+            "/etc/sudoers.d/spb-staging-world-reset",
+            "/var/lib/spb/staging-world-reset/requests",
+        ):
+            self.assertIn(required, installer)
 
 
 class PlayerListTests(unittest.TestCase):
