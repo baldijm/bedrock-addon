@@ -3,7 +3,7 @@ import { env } from 'cloudflare:workers';
 type BridgeOptions = RequestInit & { method?: 'GET' | 'POST' };
 export type ServerEnvironment = 'staging' | 'production';
 
-function bridgeConfiguration(environment: ServerEnvironment) {
+function observerConfiguration(environment: ServerEnvironment) {
 	if (environment === 'production') {
 		if (!env.PRODUCTION_OBSERVER_URL || !env.PRODUCTION_OBSERVER_TOKEN)
 			throw new Error('El observador de producción todavía no está configurado.');
@@ -14,8 +14,7 @@ function bridgeConfiguration(environment: ServerEnvironment) {
 	return { base: env.STAGING_BRIDGE_URL, token: env.STAGING_BRIDGE_TOKEN };
 }
 
-export async function bridgeRequest(environment: ServerEnvironment, path: string, options: BridgeOptions = {}) {
-	const configuration = bridgeConfiguration(environment);
+async function request(configuration: { base: string; token: string }, path: string, options: BridgeOptions = {}) {
 	const response = await fetch(`${configuration.base.replace(/\/+$/, '')}${path}`, {
 		...options,
 		headers: {
@@ -29,4 +28,15 @@ export async function bridgeRequest(environment: ServerEnvironment, path: string
 		throw new Error(detail);
 	}
 	return body;
+}
+
+export async function bridgeRequest(environment: ServerEnvironment, path: string, options: BridgeOptions = {}) {
+	return request(observerConfiguration(environment), path, options);
+}
+
+// Production uses the same authenticated hostname as its observer. Cloudflare Tunnel
+// sends only /world/promotion to the read-only observer; all other paths reach the
+// console bridge that owns Bedrock's stdin/stdout.
+export async function consoleBridgeRequest(environment: ServerEnvironment, path: string, options: BridgeOptions = {}) {
+	return request(observerConfiguration(environment), path, options);
 }

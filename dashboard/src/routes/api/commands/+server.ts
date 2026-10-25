@@ -1,6 +1,6 @@
 import type { RequestHandler } from './$types';
 import { isAuthenticated, json, unauthorized } from '#lib/server/auth';
-import { bridgeRequest, type ServerEnvironment } from '#lib/server/bridge';
+import { consoleBridgeRequest, type ServerEnvironment } from '#lib/server/bridge';
 import { resolveEnvironment } from '#lib/server/environment';
 
 const localLogs: { id: number; at: string; text: string }[] = [];
@@ -20,7 +20,10 @@ export const GET: RequestHandler = async ({ request }) => {
 	const environment: ServerEnvironment = resolveEnvironment(request);
 	if (isLocalDevelopment()) return json({ environment, ...localConsole() });
 	try {
-		const [health, logs] = await Promise.all([bridgeRequest(environment, '/health'), bridgeRequest(environment, '/logs?after=0')]);
+		const [health, logs] = await Promise.all([
+			consoleBridgeRequest(environment, '/health'),
+			consoleBridgeRequest(environment, '/logs?after=0')
+		]);
 		return json({ environment, health, logs });
 	} catch (error) {
 		return json(
@@ -35,7 +38,6 @@ export const POST: RequestHandler = async ({ request }) => {
 	const body = await request.json().catch(() => null);
 	let command = typeof body?.command === 'string' ? body.command.trim() : '';
 	const environment: ServerEnvironment = resolveEnvironment(request);
-	if (environment === 'production') return json({ error: 'Producción está disponible sólo en lectura.' }, 403);
 	command = command.replace(/^\/+/, '');
 	if (!command || command.length > 512 || /[\r\n\0]/.test(command))
 		return json({ error: 'El comando debe ocupar una sola línea de hasta 512 caracteres.' }, 400);
@@ -44,7 +46,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		return json({ ok: true, localDevelopment: true }, 202);
 	}
 	try {
-		const result = await bridgeRequest('staging', '/commands', {
+		const result = await consoleBridgeRequest(environment, '/commands', {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({ command })

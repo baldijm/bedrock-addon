@@ -1,0 +1,23 @@
+[Unit]
+Description=Persistent SPB console bridge for production
+After=network.target
+
+[Service]
+Type=simple
+User=bedrock
+Group=bedrock
+WorkingDirectory=/opt/bedrock
+Environment=LD_LIBRARY_PATH=/opt/bedrock
+EnvironmentFile=/etc/bedrock-production-console/bridge.env
+RuntimeDirectory=spb-production-bridge
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=restart
+ExecStart=/usr/bin/python3 /usr/local/lib/spb/bedrock-console-bridge.py --root /opt/bedrock --listen 127.0.0.1:3004 --state-file /run/spb-production-bridge/bedrock.pid
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=75
+KillMode=mixed
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target

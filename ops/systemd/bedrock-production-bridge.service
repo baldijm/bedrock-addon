@@ -1,0 +1,15 @@
+[Unit]
+Description=Minecraft Bedrock Dedicated Server
+Requires=spb-production-bridge.service
+After=spb-production-bridge.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/python3 /usr/local/lib/spb/bedrock-production-control.py start
+ExecStop=/usr/bin/python3 /usr/local/lib/spb/bedrock-production-control.py stop
+TimeoutStartSec=90
+TimeoutStopSec=90
+
+[Install]
+WantedBy=multi-user.target

@@ -22,6 +22,7 @@ import world_backup
 ROOT = Path("/opt/bedrock")
 BACKUP_DIR = Path("/var/backups/bedrock")
 MAX_SOURCE_BYTES = 1024 * 1024 * 1024
+PRODUCTION_BRIDGE_STATE = Path("/run/spb-production-bridge/bedrock.pid")
 
 
 def service_running():
@@ -42,11 +43,22 @@ def service_running():
     try:
         pid = int(result.stdout.strip())
     except ValueError:
-        return False
-    if result.returncode != 0 or pid <= 0:
-        return False
+        pid = 0
+    if result.returncode == 0 and pid > 0:
+        try:
+            if Path(f"/proc/{pid}/comm").read_text().strip() == "bedrock_server":
+                return True
+        except OSError:
+            pass
 
-    return Path(f"/proc/{pid}/comm").read_text().strip() == "bedrock_server"
+    # Production may run through the persistent console bridge. Its parent is
+    # Python, so read the bridge's explicit child PID instead of treating the
+    # control unit's MainPID as Bedrock itself.
+    try:
+        child_pid = int(PRODUCTION_BRIDGE_STATE.read_text(encoding="ascii").strip())
+        return Path(f"/proc/{child_pid}/comm").read_text().strip() == "bedrock_server"
+    except (FileNotFoundError, OSError, ValueError):
+        return False
 
 
 def run_service(action, timeout):

@@ -131,7 +131,7 @@
 		<Card.Root class="w-full max-w-md shadow-xl">
 			<Card.Header class="space-y-3">
 				<div class="flex size-10 items-center justify-center rounded-lg bg-primary text-primary-foreground"><Terminal class="size-5" /></div>
-				<div class="space-y-1"><Card.Title>Consola de SPB</Card.Title><Card.Description>Staging permite comandos; Producción se muestra sólo en lectura.</Card.Description></div>
+			<div class="space-y-1"><Card.Title>Consola de SPB</Card.Title><Card.Description>Envía comandos normales de Minecraft al entorno seleccionado.</Card.Description></div>
 			</Card.Header>
 			<Card.Content>
 				<form class="grid gap-4" onsubmit={(event) => { event.preventDefault(); void signIn(); }}>
@@ -146,7 +146,7 @@
 	<main class="dark flex h-svh flex-col overflow-hidden bg-background text-foreground">
 		<header class="flex h-14 shrink-0 items-center gap-3 border-b px-4">
 			<div class="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground"><Terminal class="size-4" /></div>
-			<div class="min-w-0"><p class="truncate text-sm font-medium">Terminal de {environment === 'production' ? 'producción' : 'staging'}</p><p class="text-xs text-muted-foreground">{localDevelopment ? 'Vista local simulada' : environment === 'production' ? 'Observador de solo lectura' : 'Salida real de Bedrock'} · {logs.length} líneas</p></div>
+			<div class="min-w-0"><p class="truncate text-sm font-medium">Terminal de {environment === 'production' ? 'producción' : 'staging'}</p><p class="text-xs text-muted-foreground">{localDevelopment ? 'Vista local simulada' : 'Salida real de Bedrock'} · {logs.length} líneas</p></div>
 			<div class="ml-auto flex shrink-0 items-center gap-2"><EnvironmentSelector /><Badge variant={localDevelopment ? 'outline' : bedrockRunning ? 'default' : 'destructive'}>{localDevelopment ? 'Vista local' : bedrockRunning ? 'En línea' : 'Sin conexión'}</Badge><Button variant="outline" size="sm" href="/"><ArrowLeft /> <span class="hidden sm:inline">Panel</span></Button></div>
 		</header>
 
@@ -162,12 +162,8 @@
 
 		<form class="shrink-0 border-t bg-card p-3 sm:p-4" onsubmit={(event) => { event.preventDefault(); void submit(); }}>
 			{#if error}<Alert.Root variant="destructive" class="mb-3"><Alert.Title>{environment === 'production' ? 'Producción no está disponible' : 'Staging no está disponible'}</Alert.Title><Alert.Description>{error}</Alert.Description></Alert.Root>{/if}
-			{#if environment === 'production'}
-				<p class="text-sm text-muted-foreground">Producción está en modo de solo lectura. Sus comandos, reinicios y despliegues no se pueden ejecutar desde aquí.</p>
-			{:else}
-				<div class="flex items-center gap-2"><span class="font-mono text-sm text-muted-foreground">›</span><Label class="sr-only" for="command">Comando de Minecraft</Label><Input id="command" bind:value={command} class="font-mono" placeholder="say Hola desde la consola" autocomplete="off" /><Button type="submit" disabled={sending} class="min-w-11 sm:min-w-28"><Send /> <span class="hidden sm:inline">{sending ? 'Enviando…' : 'Enviar'}</span></Button></div>
-				<p class="mt-2 text-xs text-muted-foreground">Staging solamente · no ejecuta comandos de Linux ni afecta producción.</p>
-			{/if}
+			<div class="flex items-center gap-2"><span class="font-mono text-sm text-muted-foreground">›</span><Label class="sr-only" for="command">Comando de Minecraft</Label><Input id="command" bind:value={command} class="font-mono" placeholder="say Hola desde la consola" autocomplete="off" /><Button type="submit" disabled={sending} class="min-w-11 sm:min-w-28"><Send /> <span class="hidden sm:inline">{sending ? 'Enviando…' : 'Enviar'}</span></Button></div>
+			<p class="mt-2 text-xs text-muted-foreground">Sólo comandos de Minecraft: no ejecuta comandos de Linux. Verifica siempre el entorno seleccionado antes de enviar.</p>
 		</form>
 	</main>
 {/if}
