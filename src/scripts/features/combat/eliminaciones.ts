@@ -13,19 +13,24 @@ type CreditoDeCombate = {
 const ultimoAtacantePorVictima = new Map<string, CreditoDeCombate>();
 
 function esJugador(entidad: Entity | undefined): entidad is Player {
-  return entidad?.typeId === 'minecraft:player';
+  return entidad?.isValid === true && entidad.typeId === 'minecraft:player';
 }
 
 function obtenerAtacante(source: EntityDamageSource): Player | undefined {
   if (esJugador(source.damagingEntity)) return source.damagingEntity;
 
   const proyectil = source.damagingProjectile;
-  if (!proyectil) return undefined;
+  if (!proyectil?.isValid) return undefined;
 
-  const componente = proyectil.getComponent('minecraft:projectile') as
-    | EntityProjectileComponent
-    | undefined;
-  return esJugador(componente?.owner) ? componente.owner : undefined;
+  try {
+    const componente = proyectil.getComponent('minecraft:projectile') as
+      | EntityProjectileComponent
+      | undefined;
+    return esJugador(componente?.owner) ? componente.owner : undefined;
+  } catch {
+    // El proyectil puede desaparecer entre isValid y getComponent.
+    return undefined;
+  }
 }
 
 function buscarJugadorConectado(nombre: string): Player | undefined {

@@ -5,16 +5,22 @@ import { obtenerPuntosPorEliminacionArena } from '../games/arenaPvp.js';
 const VENTANA_CREDITO_TICKS = 20 * 3;
 const ultimoAtacantePorVictima = new Map();
 function esJugador(entidad) {
-    return entidad?.typeId === 'minecraft:player';
+    return entidad?.isValid === true && entidad.typeId === 'minecraft:player';
 }
 function obtenerAtacante(source) {
     if (esJugador(source.damagingEntity))
         return source.damagingEntity;
     const proyectil = source.damagingProjectile;
-    if (!proyectil)
+    if (!proyectil?.isValid)
         return undefined;
-    const componente = proyectil.getComponent('minecraft:projectile');
-    return esJugador(componente?.owner) ? componente.owner : undefined;
+    try {
+        const componente = proyectil.getComponent('minecraft:projectile');
+        return esJugador(componente?.owner) ? componente.owner : undefined;
+    }
+    catch {
+        // El proyectil puede desaparecer entre isValid y getComponent.
+        return undefined;
+    }
 }
 function buscarJugadorConectado(nombre) {
     return world.getPlayers().find((jugador) => jugador.name === nombre);

@@ -8,21 +8,21 @@
     }
   },
   "header": {
-    "name": "BP 1.0.49",
+    "name": "BP 1.0.50",
     "description": "NEW SPB ADDONN",
     "min_engine_version": [1, 21, 80],
     "uuid": "499bdb1a-fabe-4234-8eea-b08f9c74f751",
-    "version": [1, 0, 49]
+    "version": [1, 0, 50]
   },
   "modules": [
     {
       "type": "data",
       "uuid": "c95def68-0675-4e92-9213-431cd8475ec5",
-      "version": [1, 0, 49]
+      "version": [1, 0, 50]
     },
     {
       "uuid": "14966dd0-7471-447d-92e8-4cba25a483bf",
-      "version": [1, 0, 49],
+      "version": [1, 0, 50],
       "type": "script",
       "language": "javascript",
       "entry": "scripts/main.js"
