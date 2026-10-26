@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import bedrock_console_bridge as bridge_module
-from bedrock_console_bridge import BedrockConsoleBridge, OutputBuffer, parse_address, request_world_reset, validate_command
+from bedrock_console_bridge import BedrockConsoleBridge, OutputBuffer, parse_address, request_world_reset, validate_command, validate_structure_id
 
 
 class ValidateCommandTests(unittest.TestCase):
@@ -19,6 +19,16 @@ class ValidateCommandTests(unittest.TestCase):
         for value in ("", "   ", None):
             with self.assertRaises(ValueError):
                 validate_command(value)
+
+
+class StructureIdentifierTests(unittest.TestCase):
+    def test_accepts_a_valid_bedrock_identifier(self):
+        self.assertEqual(validate_structure_id("mystructure:casa_principal"), ("mystructure:casa_principal", "mystructure", "casa_principal"))
+
+    def test_rejects_paths_and_uppercase_identifiers(self):
+        for value in ("mystructure:../secreto", "mystructure:/secreto", "MyStructure:casa", None):
+            with self.assertRaises(ValueError):
+                validate_structure_id(value)
 
 
 class OutputBufferTests(unittest.TestCase):
@@ -73,6 +83,7 @@ class WorldResetPrivilegeTests(unittest.TestCase):
             "spb-staging-world-reset@.service",
             "/etc/sudoers.d/spb-staging-world-reset",
             "/var/lib/spb/staging-world-reset/requests",
+            "/var/lib/spb/structure-exports",
         ):
             self.assertIn(required, installer)
 

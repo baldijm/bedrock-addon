@@ -9,13 +9,16 @@ protected HTTP API on loopback only.  It is not an Internet-facing service.
 from __future__ import annotations
 
 import argparse
+import base64
 import hmac
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -31,6 +34,10 @@ MAX_COMMAND_LENGTH = 512
 MAX_BODY_BYTES = 16 * 1024
 MAX_LOG_LINES = 500
 PLAYER_LIST_TIMEOUT_SECONDS = 2
+STRUCTURE_COMMAND_TIMEOUT_SECONDS = 5
+STRUCTURE_EXTRACT_TIMEOUT_SECONDS = 90
+MAX_STRUCTURE_BYTES = 8 * 1024 * 1024
+STRUCTURE_EXPORT_DIRECTORY = Path("/var/lib/spb/structure-exports")
 SERVER_PROPERTIES_FILE = "server.properties"
 WORLD_RESET_REQUESTS = Path("/var/lib/spb/staging-world-reset/requests")
 WORLD_RESET_STATUS = Path("/var/lib/spb/staging-world-reset/status.json")
@@ -57,6 +64,9 @@ GAMERULE_PATTERNS = {
     "showcoordinates": re.compile(r"showcoordinates.*?\b(true|false)\b", re.IGNORECASE),
     "showdaysplayed": re.compile(r"showdaysplayed.*?\b(true|false)\b", re.IGNORECASE),
 }
+STRUCTURE_ID_PATTERN = re.compile(
+    r"^(?P<namespace>[a-z0-9][a-z0-9_.-]{0,31}):(?P<name>[a-z0-9][a-z0-9_./-]{0,95})$"
+)
 
 
 def validate_command(value: object) -> str:
@@ -69,6 +79,17 @@ def validate_command(value: object) -> str:
     ):
         raise ValueError("El comando debe ocupar una sola línea de hasta 512 caracteres.")
     return command
+
+
+def validate_structure_id(value: object) -> tuple[str, str, str]:
+    """Validate a Bedrock structure identifier without accepting filesystem paths."""
+    if not isinstance(value, str):
+        raise ValueError("El identificador de estructura debe ser texto.")
+    identifier = value.strip().lower()
+    match = STRUCTURE_ID_PATTERN.fullmatch(identifier)
+    if not match or ".." in match.group("name") or match.group("name").startswith("/"):
+        raise ValueError("Usa un identificador como mystructure:mi_casa, en minúsculas.")
+    return identifier, match.group("namespace"), match.group("name")
 
 
 def parse_server_properties(path: Path) -> dict[str, str]:
@@ -334,6 +355,104 @@ class BedrockConsoleBridge:
             self.process.stdin.flush()
         return command_id, cursor
 
+    def _command_output(self, command: str, timeout_seconds: float) -> list[dict[str, Any]]:
+        """Issue one console command and retain only output emitted afterwards."""
+        _, cursor = self.submit(command)
+        lines = self.output.wait_after(cursor, timeout_seconds)
+        return lines
+
+    def _command_until(
+        self, command: str, expected: re.Pattern[str], timeout_seconds: float
+    ) -> list[dict[str, Any]]:
+        """Wait for Bedrock's actual confirmation, ignoring unrelated log lines."""
+        _, cursor = self.submit(command)
+        deadline = time.monotonic() + timeout_seconds
+        received: list[dict[str, Any]] = []
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RuntimeError(f"Bedrock no confirmó {command!r} a tiempo.")
+            lines = self.output.wait_after(cursor, remaining)
+            if not lines:
+                continue
+            cursor = lines[-1]["id"]
+            received.extend(lines)
+            if any(expected.search(str(line["text"])) for line in lines):
+                return received
+
+    def export_structure(self, source_id: object) -> dict[str, str | int]:
+        """Extract one disk-saved structure from a short, held world snapshot.
+
+        No original world file is edited.  Bedrock is asked to hold saves while
+        its world directory is copied, and is always resumed in ``finally``.
+        The temporary snapshot and extractor output are removed before return.
+        """
+        identifier, namespace, name = validate_structure_id(source_id)
+        properties = parse_server_properties(self.root / SERVER_PROPERTIES_FILE)
+        world_name = properties.get("level-name", "")
+        if not world_name or world_name in {".", ".."} or "/" in world_name or "\\" in world_name:
+            raise RuntimeError("El nombre del mundo activo no es válido.")
+        world = self.root / "worlds" / world_name
+        if world.is_symlink() or not world.is_dir() or not (world / "db").is_dir():
+            raise RuntimeError("No se encontró el mundo activo para exportar la estructura.")
+        tool = Path("/usr/local/lib/spb/structure-tools/node_modules/.bin/mcbe-structure-extract")
+        if not tool.is_file():
+            raise RuntimeError("El extractor de estructuras no está instalado todavía.")
+
+        with self._query_lock:
+            held = False
+            if STRUCTURE_EXPORT_DIRECTORY.is_symlink() or not STRUCTURE_EXPORT_DIRECTORY.is_dir():
+                raise RuntimeError("La carpeta temporal de estructuras no está disponible.")
+            with tempfile.TemporaryDirectory(prefix="spb-structure-", dir=STRUCTURE_EXPORT_DIRECTORY) as temporary:
+                temporary_root = Path(temporary)
+                snapshot = temporary_root / "world"
+                output = temporary_root / "output"
+                try:
+                    self._command_output("save hold", STRUCTURE_COMMAND_TIMEOUT_SECONDS)
+                    held = True
+                    # `save query` emits this exact BDS acknowledgement only when the
+                    # held files are safe to copy.  It is the boundary, never a delay.
+                    self._command_until(
+                        "save query",
+                        re.compile(r"Data saved\. Files are now ready to be copied\.", re.IGNORECASE),
+                        STRUCTURE_COMMAND_TIMEOUT_SECONDS,
+                    )
+                    for path in world.rglob("*"):
+                        if path.is_symlink():
+                            raise RuntimeError("El mundo contiene un enlace simbólico no permitido.")
+                    shutil.copytree(world, snapshot)
+                finally:
+                    if held:
+                        try:
+                            self._command_until(
+                                "save resume",
+                                re.compile(r"Changes to the world are resumed\.", re.IGNORECASE),
+                                STRUCTURE_COMMAND_TIMEOUT_SECONDS,
+                            )
+                        except RuntimeError:
+                            # The original command failure is more relevant; BDS will also
+                            # resume writes when it stops, but this is logged for diagnosis.
+                            print("No se pudo confirmar save resume tras exportar estructura.", file=sys.stderr, flush=True)
+
+                try:
+                    subprocess.run(
+                        [str(tool), str(snapshot), "--output", str(output)],
+                        check=True,
+                        timeout=STRUCTURE_EXTRACT_TIMEOUT_SECONDS,
+                        capture_output=True,
+                        text=True,
+                    )
+                except (OSError, subprocess.SubprocessError) as error:
+                    raise RuntimeError("No se pudo extraer la estructura desde la copia del mundo.") from error
+                result = output / "structures" / namespace / f"{name}.mcstructure"
+                if result.is_symlink() or not result.is_file():
+                    raise RuntimeError("No se encontró una estructura guardada en disco con ese nombre.")
+                size = result.stat().st_size
+                if not 1 <= size <= MAX_STRUCTURE_BYTES:
+                    raise RuntimeError("La estructura excede el límite seguro de 8 MiB.")
+                encoded = base64.b64encode(result.read_bytes()).decode("ascii")
+                return {"source": identifier, "size": size, "content": encoded}
+
     def list_players(self) -> dict[str, Any]:
         """Return only the current BDS `list` response, never a cached estimate."""
         with self._query_lock:
@@ -547,7 +666,7 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
         if not self._require_authorization():
             return
         path = urlparse(self.path).path
-        if path not in {"/commands", "/properties", "/gamerules", "/world/reset"}:
+        if path not in {"/commands", "/properties", "/gamerules", "/world/reset", "/structures/export"}:
             self._send_json(HTTPStatus.NOT_FOUND, {"error": "No existe esa ruta."})
             return
         try:
@@ -559,6 +678,9 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
             return
         try:
             body = json.loads(self.rfile.read(length))
+            if path == "/structures/export":
+                self._send_json(HTTPStatus.OK, self.bridge_server.bridge.export_structure(body.get("source")))
+                return
             if path == "/world/reset":
                 operation = request_world_reset(self.bridge_server.bridge.root, body)
                 self._send_json(HTTPStatus.ACCEPTED, {"ok": True, "environment": "staging", "operation": operation})

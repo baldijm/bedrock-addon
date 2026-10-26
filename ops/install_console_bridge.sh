@@ -14,6 +14,10 @@ install -o root -g root -m 0644 /tmp/bedrock-staging-restart.conf /etc/systemd/s
 visudo -cf /tmp/spb-staging-world-reset
 install -o root -g root -m 0440 /tmp/spb-staging-world-reset /etc/sudoers.d/spb-staging-world-reset
 install -d -o bedrock -g bedrock -m 0700 /var/lib/spb/staging-world-reset/requests
+install -d -o bedrock -g bedrock -m 0700 /var/lib/spb/structure-exports
+if [ -f /tmp/install_structure_tools.sh ]; then
+  sh /tmp/install_structure_tools.sh
+fi
 install -d -o root -g root -m 0700 /etc/bedrock-staging-console
 if [ ! -f /etc/bedrock-staging-console/bridge.env ]; then
   echo 'Falta /etc/bedrock-staging-console/bridge.env; no se modificó el servicio.' >&2

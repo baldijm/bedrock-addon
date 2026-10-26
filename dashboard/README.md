@@ -1,6 +1,6 @@
 # Consola de SPB
 
-Consola web privada para enviar comandos de Minecraft Bedrock al entorno de **staging**. Es una aplicación SvelteKit desplegable en Cloudflare Workers. El Worker se comunica con un bridge local mediante Cloudflare Tunnel y un secreto independiente de alta entropía.
+Consola web privada para administrar los entornos de Minecraft Bedrock. Es una aplicación SvelteKit desplegable en Cloudflare Workers. El Worker se comunica con cada bridge local mediante Cloudflare Tunnel y secretos independientes de alta entropía.
 
 No se conecta por SSH al servidor, no ejecuta comandos de Linux y no incluye ninguna ruta ni credencial de producción.
 
@@ -27,6 +27,17 @@ El Worker requiere estos secretos, que se guardan en Cloudflare y nunca en Git:
 - `STAGING_SERVER_TOKEN`: secreto del mecanismo temporal de cola del add-on; no se usa por el bridge.
 - `STAGING_BRIDGE_URL`: `https://staging-bridge.baldijm.com`.
 - `STAGING_BRIDGE_TOKEN`: secreto aleatorio compartido sólo entre Worker y bridge.
+- `GITHUB_STRUCTURES_TOKEN`: fine-grained token de GitHub, limitado al repositorio del add-on y al permiso **Contents: Read and write**. Se usa exclusivamente para versionar archivos `.mcstructure` en `BP/structures/spb`.
+
+## Biblioteca de estructuras
+
+La ruta `/structures` separa los dos pasos que Bedrock suele mezclar:
+
+1. **Exportar/importar** publica un archivo `.mcstructure` en GitHub, que es la biblioteca versionada y la fuente de verdad.
+2. El flujo de despliegue de add-ons distribuye esa biblioteca a staging; producción se actualiza únicamente mediante su promoción autorizada.
+3. **Colocar** carga una estructura ya desplegada con `structure load`; pide coordenadas y una confirmación literal antes de modificar el mundo del entorno elegido.
+
+Para exportar desde un mundo, primero se guarda con Structure Block usando **Save to Disk**. El bridge emite `save hold`, espera la confirmación real de Bedrock `Data saved. Files are now ready to be copied.`, toma una copia temporal privada, ejecuta el extractor sobre la copia y siempre envía `save resume`. El mundo original no se reemplaza ni se reinicia durante ese proceso.
 
 ## Activar staging después del despliegue
 

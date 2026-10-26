@@ -12,6 +12,10 @@ if [ ! -f /etc/systemd/system/bedrock.service.legacy ]; then
 fi
 
 install -d -o root -g root -m 0700 /etc/bedrock-production-console
+install -d -o bedrock -g bedrock -m 0700 /var/lib/spb/structure-exports
+if [ -f /tmp/install_structure_tools.sh ]; then
+  sh /tmp/install_structure_tools.sh
+fi
 if [ ! -f /etc/bedrock-production-console/bridge.env ]; then
   set -a
   . /etc/bedrock-production-observer/observer.env

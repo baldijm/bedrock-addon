@@ -10,6 +10,9 @@ declare global {
 		STAGING_BRIDGE_TOKEN: string;
 		PRODUCTION_OBSERVER_URL: string;
 		PRODUCTION_OBSERVER_TOKEN: string;
+		GITHUB_STRUCTURES_TOKEN: string;
+		GITHUB_STRUCTURES_REPOSITORY: string;
+		GITHUB_STRUCTURES_BRANCH: string;
 	}
 
 	namespace App {

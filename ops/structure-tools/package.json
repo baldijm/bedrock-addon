@@ -1,0 +1,9 @@
+{
+  "name": "spb-structure-tools",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "mcbe-structure-extract": "1.0.3"
+  }
+}
