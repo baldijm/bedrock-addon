@@ -4,20 +4,12 @@
 	import Activity from '@lucide/svelte/icons/activity';
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
 	import Cloud from '@lucide/svelte/icons/cloud';
-	import Blocks from '@lucide/svelte/icons/blocks';
-	import Menu from '@lucide/svelte/icons/menu';
-	import Server from '@lucide/svelte/icons/server';
 	import ShieldCheck from '@lucide/svelte/icons/shield-check';
-	import Settings from '@lucide/svelte/icons/settings';
 	import Terminal from '@lucide/svelte/icons/terminal';
-	import MapPinned from '@lucide/svelte/icons/map-pinned';
-	import UsersRound from '@lucide/svelte/icons/users-round';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
-	import EnvironmentSelector from '#lib/components/EnvironmentSelector.svelte';
 	import * as Separator from '#lib/components/ui/separator/index.js';
-	import * as Sheet from '#lib/components/ui/sheet/index.js';
 
 	type ConsoleLine = { id: number; at: string; text: string };
 	type PlayerSnapshot = {
@@ -36,7 +28,6 @@
 	let localDevelopment = $state(false);
 	let playerSnapshot = $state<PlayerSnapshot | null>(null);
 	let playersError = $state('');
-	let mobileNavOpen = $state(false);
 	let environment = $state<'staging' | 'production'>('staging');
 
 	const lastLog = $derived(logs.at(-1)?.text ?? 'Aún no hay actividad registrada.');
@@ -103,105 +94,6 @@
 			<Activity class="mr-2 inline size-4 animate-pulse" /> Cargando panel…
 		</div>
 	{:else}
-		<header class="border-b">
-			<div class="mx-auto flex h-16 w-full max-w-6xl items-center gap-3 px-4 md:px-6">
-				<div
-					class="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground"
-				>
-					<Server class="size-4" />
-				</div>
-				<div class="min-w-0">
-					<p class="truncate text-sm font-semibold">SPB</p>
-					<p class="truncate text-xs text-muted-foreground">Panel de administración</p>
-				</div>
-				<div class="ml-auto hidden items-center gap-2 md:flex">
-					<EnvironmentSelector /><Badge
-						variant={localDevelopment ? 'outline' : bedrockRunning ? 'default' : 'destructive'}
-						>{localDevelopment
-							? 'Vista local'
-							: bedrockRunning
-								? 'En línea'
-								: 'Sin conexión'}</Badge
-					><Button variant="outline" size="sm" href="/members"><UsersRound /> Miembros</Button
-					><Button variant="outline" size="sm" href="/blocks"><Blocks /> Bloques</Button><Button
-						variant="outline"
-						size="sm"
-						href="/structures"><MapPinned /> Estructuras</Button
-					><Button variant="outline" size="sm" href="/server"><Settings /> Servidor</Button><Button
-						size="sm"
-						onclick={() => void goto(terminalHref)}><Terminal /> Terminal</Button
-					>
-				</div>
-				<div class="ml-auto flex items-center gap-2 md:hidden">
-					<EnvironmentSelector /><Button
-						variant="outline"
-						size="icon-sm"
-						aria-label="Abrir navegación"
-						onclick={() => (mobileNavOpen = true)}><Menu /></Button
-					>
-				</div>
-			</div>
-		</header>
-		<Sheet.Root bind:open={mobileNavOpen}>
-			<Sheet.Content side="right" class="w-[min(20rem,calc(100vw-1.5rem))] p-5">
-				<Sheet.Header
-					><Sheet.Title>Navegación</Sheet.Title><Sheet.Description
-						>Panel de administración de staging.</Sheet.Description
-					></Sheet.Header
-				>
-				<div class="mt-2">
-					<Badge variant={localDevelopment ? 'outline' : bedrockRunning ? 'default' : 'destructive'}
-						>{localDevelopment
-							? 'Vista local'
-							: bedrockRunning
-								? 'Staging en línea'
-								: 'Staging sin conexión'}</Badge
-					>
-				</div>
-				<nav class="mt-3 grid gap-2" aria-label="Navegación principal">
-					<Button
-						class="justify-start"
-						variant="outline"
-						onclick={() => {
-							mobileNavOpen = false;
-							void goto('/members');
-						}}><UsersRound /> Miembros</Button
-					>
-					<Button
-						class="justify-start"
-						variant="outline"
-						onclick={() => {
-							mobileNavOpen = false;
-							void goto('/blocks');
-						}}><Blocks /> Bloques</Button
-					>
-					<Button
-						class="justify-start"
-						variant="outline"
-						onclick={() => {
-							mobileNavOpen = false;
-							void goto('/structures');
-						}}><MapPinned /> Estructuras</Button
-					>
-					<Button
-						class="justify-start"
-						variant="outline"
-						onclick={() => {
-							mobileNavOpen = false;
-							void goto('/server');
-						}}><Settings /> Servidor</Button
-					>
-					<Button
-						class="justify-start"
-						onclick={() => {
-							mobileNavOpen = false;
-							void goto(terminalHref);
-						}}><Terminal /> Terminal</Button
-					>
-				</nav>
-			</Sheet.Content>
-		</Sheet.Root>
-
 		<div class="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 md:px-6 md:py-10">
 			<section class="flex flex-col justify-between gap-4 md:flex-row md:items-end">
 				<div class="space-y-2">

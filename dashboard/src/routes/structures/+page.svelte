@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import Download from '@lucide/svelte/icons/download';
 	import FileUp from '@lucide/svelte/icons/file-up';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
@@ -8,7 +7,6 @@
 	import PackagePlus from '@lucide/svelte/icons/package-plus';
 	import Upload from '@lucide/svelte/icons/upload';
 	import { toast } from 'svelte-sonner';
-	import EnvironmentSelector from '#lib/components/EnvironmentSelector.svelte';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
@@ -170,25 +168,7 @@
 
 <svelte:head><title>Estructuras · SPB</title></svelte:head>
 
-<main class="dark min-h-svh bg-background text-foreground">
-	<header class="border-b">
-		<div class="mx-auto flex h-16 w-full max-w-6xl items-center gap-3 px-4 md:px-6">
-			<div
-				class="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground"
-			>
-				<MapPinned class="size-4" />
-			</div>
-			<div class="min-w-0">
-				<p class="truncate text-sm font-semibold">SPB</p>
-				<p class="truncate text-xs text-muted-foreground">Biblioteca de estructuras</p>
-			</div>
-			<div class="ml-auto flex items-center gap-2">
-				<EnvironmentSelector /><Button variant="outline" size="sm" href="/"
-					><ArrowLeft /> Panel</Button
-				>
-			</div>
-		</div>
-	</header>
+<main class="min-h-full bg-background text-foreground">
 	<div class="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 md:px-6 md:py-10">
 		<section class="space-y-2">
 			<p class="text-sm text-muted-foreground">

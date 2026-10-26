@@ -1,5 +1,4 @@
 <script lang="ts">
-	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import Blocks from '@lucide/svelte/icons/blocks';
 	import Copy from '@lucide/svelte/icons/copy';
 	import Search from '@lucide/svelte/icons/search';
@@ -7,7 +6,6 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
-	import EnvironmentSelector from '#lib/components/EnvironmentSelector.svelte';
 
 	type BlockSource = 'vanilla' | 'spb';
 	type Block = { id: string; source: BlockSource };
@@ -34,14 +32,7 @@
 
 <svelte:head><title>Bloques · SPB</title></svelte:head>
 
-<main class="dark min-h-svh bg-background text-foreground">
-	<header class="border-b">
-		<div class="mx-auto flex h-16 w-full max-w-6xl items-center gap-3 px-4 md:px-6">
-			<div class="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground"><Blocks class="size-4" /></div>
-			<div><p class="text-sm font-semibold">SPB</p><p class="text-xs text-muted-foreground">Catálogo de bloques</p></div>
-			<div class="ml-auto flex items-center gap-2"><EnvironmentSelector /><Button variant="outline" size="sm" href="/"><ArrowLeft /> Panel</Button></div>
-		</div>
-	</header>
+<main class="min-h-full bg-background text-foreground">
 
 	<div class="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 md:px-6 md:py-10">
 		<section class="space-y-2">

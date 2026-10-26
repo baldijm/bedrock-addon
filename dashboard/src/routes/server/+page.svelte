@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
@@ -14,7 +13,6 @@
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
-	import EnvironmentSelector from '#lib/components/EnvironmentSelector.svelte';
 
 	type Properties = Record<string, string>;
 	type Settings = {
@@ -192,8 +190,7 @@
 
 <svelte:head><title>Servidor · SPB</title></svelte:head>
 
-<main class="dark min-h-svh bg-background text-foreground">
-	<header class="border-b"><div class="mx-auto flex min-h-16 w-full max-w-5xl flex-wrap items-center gap-3 px-4 py-3 md:flex-nowrap md:px-6"><div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground"><Server class="size-4" /></div><div class="min-w-0 flex-1"><p class="text-sm font-semibold">SPB</p><p class="truncate text-xs text-muted-foreground">Configuración del servidor</p></div><div class="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:w-auto"><EnvironmentSelector /><Button variant="outline" size="sm" href="/releases">Mundos</Button><Button variant="outline" size="sm" href="/"><ArrowLeft /> Panel</Button></div></div></header>
+<main class="min-h-full bg-background text-foreground">
 	<div class="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 md:px-6 md:py-10">
 		<section class="space-y-2"><p class="text-sm text-muted-foreground">{isProduction ? 'Producción' : 'Staging'}</p><h1 class="text-3xl font-semibold tracking-tight">Servidor</h1><p class="max-w-3xl text-sm text-muted-foreground">Edita la configuración del entorno seleccionado. Guardar crea una copia del archivo anterior; los cambios de propiedades se aplican al reiniciar ese entorno. Las reglas del mundo se aplican de inmediato.</p></section>
 		{#if restartRequested}<Alert.Root><LoaderCircle class="animate-spin" /><Alert.Title>Reinicio de {isProduction ? 'producción' : 'staging'} en curso</Alert.Title><Alert.Description>La orden ya fue enviada. Bedrock está guardando y arrancará de nuevo con la configuración guardada. Esta página se actualizará automáticamente; no pulses nada de nuevo.</Alert.Description></Alert.Root>{:else if error}<Alert.Root variant="destructive"><TriangleAlert /><Alert.Title>No se pudo completar la operación</Alert.Title><Alert.Description>{error}</Alert.Description></Alert.Root>{/if}

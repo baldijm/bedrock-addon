@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import ShieldAlert from '@lucide/svelte/icons/shield-alert';
@@ -142,8 +141,7 @@
 
 <svelte:head><title>Promover mundo · SPB</title></svelte:head>
 
-<main class="dark min-h-svh bg-background text-foreground">
-	<header class="border-b"><div class="mx-auto flex h-16 w-full max-w-3xl items-center gap-3 px-4 md:px-6"><div><p class="text-sm font-semibold">SPB</p><p class="text-xs text-muted-foreground">Promoción de mundo</p></div><Button class="ml-auto" variant="outline" size="sm" href="/server"><ArrowLeft /> Servidor</Button></div></header>
+<main class="min-h-full bg-background text-foreground">
 	<div class="mx-auto w-full max-w-3xl space-y-6 px-4 py-6 md:px-6 md:py-10">
 		<section class="space-y-2"><p class="text-sm text-muted-foreground">Mantenimiento de producción</p><h1 class="text-3xl font-semibold tracking-tight">Promover mundo de staging</h1><p class="max-w-2xl text-sm text-muted-foreground">Reemplaza el mundo activo de producción con una copia consistente del mundo activo de staging y publica sus ajustes de /server. No fusiona progreso.</p></section>
 		{#if error}<Alert.Root variant="destructive"><ShieldAlert /><Alert.Title>No se pudo completar la promoción</Alert.Title><Alert.Description>{error}</Alert.Description></Alert.Root>{/if}
