@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import re
+import struct
 import subprocess
 from urllib.parse import urlparse
 import uuid
@@ -123,6 +124,34 @@ def production_gamerules() -> dict[str, bool]:
     return values
 
 
+def production_world_state() -> dict[str, object]:
+    """Read saved world settings independently of server.properties."""
+    world = production_properties().get("level-name", "")
+    if not world or world in {".", ".."} or "/" in world or "\\" in world:
+        raise RuntimeError("El nombre del mundo activo de producción no es válido.")
+    level_dat = WORLDS_ROOT / world / "level.dat"
+    if level_dat.is_symlink() or not level_dat.is_file():
+        raise RuntimeError("No se pudo leer level.dat del mundo activo de producción.")
+    data = level_dat.read_bytes()
+    def saved_integer(name: bytes) -> int:
+        marker = b"\x03" + len(name).to_bytes(2, "little") + name
+        offset = data.find(marker)
+        if offset < 0 or offset + len(marker) + 4 > len(data):
+            raise RuntimeError(f"No se pudo leer {name.decode('ascii')} del mundo.")
+        return struct.unpack_from("<i", data, offset + len(marker))[0]
+
+    difficulty = saved_integer(b"Difficulty")
+    gamemode = saved_integer(b"GameType")
+    gamemodes = {0: "survival", 1: "creative", 2: "adventure", 6: "spectator"}
+    if difficulty not in range(4) or gamemode not in gamemodes:
+        raise RuntimeError("Los ajustes guardados del mundo no son válidos.")
+    return {
+        "world": world,
+        "savedDifficulty": ("peaceful", "easy", "normal", "hard")[difficulty],
+        "savedGamemode": gamemodes[gamemode],
+    }
+
+
 def promotion_status() -> dict[str, object]:
     if not PROMOTION_STATUS.exists():
         return {"state": "idle"}
@@ -205,6 +234,12 @@ class ObserverRequestHandler(BaseHTTPRequestHandler):
                     {"environment": "production", "readOnly": True, **production_gamerules()},
                 )
             except RuntimeError as error:
+                self.send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": str(error)})
+            return
+        if path == "/world-state":
+            try:
+                self.send_json(HTTPStatus.OK, production_world_state())
+            except (OSError, RuntimeError) as error:
                 self.send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": str(error)})
             return
         if path == "/world/promotion":

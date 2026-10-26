@@ -21,6 +21,11 @@ PRODUCTION_ARCHIVES = ROOT / ".world-promotion-rollback"
 TOOLS = Path("/opt/bedrock-deploy")
 PRODUCTION_SERVICE = "bedrock.service"
 STAGING_SERVICE = "bedrock-staging.service"
+PROMOTED_PROPERTIES = (
+    "server-name", "gamemode", "difficulty", "max-players", "view-distance",
+    "tick-distance", "allow-cheats", "allow-list",
+    "default-player-permission-level", "player-idle-timeout", "level-seed",
+)
 
 sys.path.insert(0, str(TOOLS))
 import production_backup  # noqa: E402
@@ -52,22 +57,44 @@ def read_level_name(root: Path) -> str:
 
 
 def replace_level_name(root: Path, name: str) -> str:
-    """Atomically change the active world name and return the original file."""
+    """Atomically publish the world and dashboard-managed settings from staging."""
     properties = root / "server.properties"
+    staging_properties = STAGING_ROOT / "server.properties"
     if properties.is_symlink() or not properties.is_file():
         raise RuntimeError("Falta server.properties o no es un archivo seguro.")
+    if staging_properties.is_symlink() or not staging_properties.is_file():
+        raise RuntimeError("Falta server.properties de staging o no es un archivo seguro.")
     original = properties.read_text(encoding="utf-8")
+    staging_values = {}
+    for line in staging_properties.read_text(encoding="utf-8").splitlines():
+        if line and not line.startswith("#") and "=" in line:
+            key, value = line.split("=", 1)
+            if key in PROMOTED_PROPERTIES:
+                if key in staging_values:
+                    raise RuntimeError(f"La propiedad {key} está duplicada en staging.")
+                staging_values[key] = value
+    missing = set(PROMOTED_PROPERTIES) - staging_values.keys()
+    if missing:
+        raise RuntimeError(f"Faltan propiedades de staging: {', '.join(sorted(missing))}.")
     lines = original.splitlines()
     replacements = 0
+    seen = set()
     updated: list[str] = []
     for line in lines:
         if line.startswith("level-name="):
             updated.append(f"level-name={name}")
             replacements += 1
+        elif "=" in line and not line.startswith("#") and line.split("=", 1)[0] in staging_values:
+            key = line.split("=", 1)[0]
+            if key in seen:
+                raise RuntimeError(f"La propiedad {key} está duplicada en producción.")
+            updated.append(f"{key}={staging_values[key]}")
+            seen.add(key)
         else:
             updated.append(line)
     if replacements != 1:
         raise RuntimeError("server.properties debe contener exactamente un level-name.")
+    updated.extend(f"{key}={staging_values[key]}" for key in PROMOTED_PROPERTIES if key not in seen)
     temporary = properties.with_name(f".{properties.name}.promotion.tmp")
     try:
         temporary.write_text("\n".join(updated) + "\n", encoding="utf-8")

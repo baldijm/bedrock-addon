@@ -27,11 +27,12 @@ export const GET: RequestHandler = async ({ request }) => {
 	const environment = resolveEnvironment(request);
 	if (environment === 'production') {
 		try {
-			const [result, gameRules] = await Promise.all([
-				bridgeRequest('production', '/properties') as Promise<{ properties?: typeof localProperties }>,
-				bridgeRequest('production', '/gamerules') as Promise<{ showCoordinates?: boolean; showDaysPlayed?: boolean }>
+			const [result, gameRules, worldState] = await Promise.all([
+				bridgeRequest('production', '/properties') as Promise<{ properties?: typeof localProperties; activeProperties?: typeof localProperties }>,
+				bridgeRequest('production', '/gamerules') as Promise<{ showCoordinates?: boolean; showDaysPlayed?: boolean }>,
+				bridgeRequest('production', '/world-state') as Promise<{ world?: string; savedDifficulty?: string; savedGamemode?: string }>
 			]);
-			return json({ environment, readOnly: true, properties: result.properties ?? {}, gameRules });
+			return json({ environment, readOnly: true, properties: result.properties ?? {}, activeProperties: result.activeProperties ?? result.properties ?? {}, gameRules, worldState });
 		} catch (error) {
 			return json({ environment, readOnly: true, error: error instanceof Error ? error.message : 'No se pudo leer la configuración de producción.' }, 503);
 		}
