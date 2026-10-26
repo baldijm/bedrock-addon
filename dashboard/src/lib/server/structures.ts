@@ -40,6 +40,7 @@ function headers(extra: HeadersInit = {}) {
 	const result = new Headers(extra);
 	result.set('accept', 'application/vnd.github+json');
 	result.set('x-github-api-version', '2026-03-10');
+	result.set('user-agent', 'SPB-Structures-Dashboard');
 	if (token()) result.set('authorization', `Bearer ${token()}`);
 	return result;
 }
