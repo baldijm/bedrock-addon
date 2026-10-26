@@ -9,13 +9,13 @@ function isLocalDevelopment() {
 
 export const POST: RequestHandler = async ({ request }) => {
 	if (!(await isAuthenticated(request))) return unauthorized();
-	if (resolveEnvironment(request) === 'production') return json({ error: 'Producción está disponible sólo en lectura.' }, 403);
+	const environment = resolveEnvironment(request);
 	if (isLocalDevelopment()) return json({ ok: true, localDevelopment: true, changed: {}, restartRequired: false });
 	try {
-		return json(await bridgeRequest('staging', '/properties/cancel'));
+		return json(await bridgeRequest(environment, '/properties/cancel'));
 	} catch (error) {
 		return json(
-			{ error: error instanceof Error ? error.message : 'No se pudieron descartar los cambios de staging.' },
+			{ error: error instanceof Error ? error.message : `No se pudieron descartar los cambios de ${environment}.` },
 			503
 		);
 	}
