@@ -1,5 +1,16 @@
 # Respaldo de datos Bedrock
 
+## Rutas de la consola de producción (25 de octubre de 2026)
+
+El túnel `spb-production-console.baldijm.com` usa estas reglas de ingreso, en este orden:
+
+1. `^/world/promotion$` → observador `http://127.0.0.1:3003` (consulta y solicita promoción).
+2. `^/world-state$` → observador `http://127.0.0.1:3003` (lee el último modo y dificultad guardados en `level.dat`).
+3. El resto del hostname → bridge `http://127.0.0.1:3004` (consola, propiedades y demás lecturas).
+4. Regla final → `http_status:404`.
+
+El dashboard de producción distingue los valores guardados en el mundo, las propiedades leídas al arrancar y los valores actuales de `server.properties`. Una promoción copia la carpeta completa del mundo y los ajustes editables de `/server` desde staging; conserva los puertos y otras propiedades propias de producción. Si se cambia `server.properties` con Bedrock ya iniciado, los ajustes que requieren reinicio quedan pendientes. El respaldo semanal automático permanece deshabilitado hasta adaptar su script al bridge.
+
 `world_backup.py` archiva **todos** los mundos de `worlds/`, `server.properties`, `allowlist.json` y `permissions.json`. El mundo activo se selecciona mediante `level-name` en `server.properties`; en la revisión de Azure del 22 de octubre de 2026 era `Bedrock HTTP Test`. Los otros mundos también se conservan. El archivo no incluye `.api-token`, otros secretos ni el binario del servidor.
 
 `systemd/bedrock.service` ejecuta Bedrock directamente mediante systemd. No utiliza `screen`: en la VM de Azure el modo anterior dejaba el proceso activo sin aceptar clientes por el puerto configurado después de la prueba de restauración. La ejecución directa ya se validó al abrir la restauración aislada y permite que los registros y el estado del proceso sean observables por systemd.

@@ -35,8 +35,8 @@ export async function bridgeRequest(environment: ServerEnvironment, path: string
 }
 
 // Production uses the same authenticated hostname as its observer. Cloudflare Tunnel
-// sends only /world/promotion to the read-only observer; all other paths reach the
-// console bridge that owns Bedrock's stdin/stdout.
+// sends /world/promotion and /world-state to the observer; all other paths reach
+// the console bridge that owns Bedrock's stdin/stdout.
 export async function consoleBridgeRequest(environment: ServerEnvironment, path: string, options: BridgeOptions = {}) {
 	return request(observerConfiguration(environment), path, options);
 }
