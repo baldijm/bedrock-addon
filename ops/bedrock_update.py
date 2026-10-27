@@ -185,13 +185,14 @@ def update(environment: str, operation: str) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--request", required=True, help="identificador de solicitud")
+    parser.add_argument("--environment", choices=sorted(ROOTS), required=True)
     args = parser.parse_args()
     if not re.fullmatch(r"[0-9a-f]{32}", args.request):
         raise RuntimeError("Identificador de actualización inválido.")
     request = REQUESTS / f"{args.request}.json"
     data = json.loads(request.read_text(encoding="utf-8"))
     environment = data.get("environment") if isinstance(data, dict) else None
-    if not isinstance(environment, str):
+    if environment != args.environment:
         raise RuntimeError("Solicitud de actualización inválida.")
     try:
         update(environment, args.request)

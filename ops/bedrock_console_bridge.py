@@ -46,7 +46,7 @@ WORLD_RESET_STATUS = Path("/var/lib/spb/staging-world-reset/status.json")
 WORLD_RESET_UNIT_PREFIX = "spb-staging-world-reset@"
 UPDATE_REQUESTS = Path("/var/lib/spb/bedrock-update/requests")
 UPDATE_STATUS = Path("/var/lib/spb/bedrock-update/status")
-UPDATE_UNIT_PREFIX = "spb-bedrock-update@"
+UPDATE_UNIT_PREFIX = "spb-staging-bedrock-update@"
 VERSION_LOG_PATTERN = re.compile(r"\bVersion:\s*(?P<version>[0-9]+(?:\.[0-9]+){2,3})\b", re.IGNORECASE)
 SERVER_PROPERTY_SPECS: dict[str, tuple[str, int | None, int | None, set[str] | None]] = {
     "server-name": ("text", None, None, None),
@@ -263,6 +263,8 @@ def read_update_status(root: Path, output: "OutputBuffer") -> dict[str, Any]:
 
 def request_update(root: Path) -> dict[str, str]:
     environment = environment_for_root(root)
+    if environment != "staging":
+        raise RuntimeError("La actualización de producción requiere su canal de mantenimiento autorizado.")
     if not UPDATE_REQUESTS.is_dir() or UPDATE_REQUESTS.is_symlink():
         raise RuntimeError("El actualizador de Bedrock no está instalado.")
     current = read_update_status(root, OutputBuffer(limit=1))

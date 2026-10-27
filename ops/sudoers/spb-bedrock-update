@@ -1,1 +1,0 @@
-bedrock ALL=(root) NOPASSWD: /bin/systemctl start --no-block spb-bedrock-update@*.service

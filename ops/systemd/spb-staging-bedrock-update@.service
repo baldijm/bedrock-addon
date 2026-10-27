@@ -1,0 +1,14 @@
+[Unit]
+Description=SPB staging Bedrock update operation %i
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/bin/python3 /usr/local/lib/spb/bedrock-update.py --environment staging --request %i
+TimeoutStartSec=35min
+Nice=10
+PrivateTmp=true
+ProtectHome=true
+ReadWritePaths=/opt/bedrock-staging /var/lib/spb
