@@ -150,8 +150,11 @@ export async function storeStructure(
 	const safeName = validateStructureName(name);
 	const limit = await structureUploadLimit();
 	if (!body) throw new Error('No se recibió el archivo de estructura.');
-	const declaredSize = Number(contentLength);
-	if (Number.isFinite(declaredSize) && (declaredSize < 1 || declaredSize > limit))
+	const declaredSize = contentLength === null ? null : Number(contentLength);
+	if (
+		declaredSize !== null &&
+		(!Number.isFinite(declaredSize) || declaredSize < 1 || declaredSize > limit)
+	)
 		throw new Error(
 			`La estructura debe medir entre 1 byte y ${(limit / 1024 / 1024).toFixed(0)} MiB.`
 		);
