@@ -35,6 +35,7 @@ MAX_BODY_BYTES = 16 * 1024
 MAX_LOG_LINES = 500
 PLAYER_LIST_TIMEOUT_SECONDS = 2
 STRUCTURE_COMMAND_TIMEOUT_SECONDS = 45
+STRUCTURE_PLACEMENT_TIMEOUT_SECONDS = 90
 STRUCTURE_EXTRACT_TIMEOUT_SECONDS = 90
 MAX_STRUCTURE_BYTES = 20 * 1024 * 1024
 MAX_IMPORTED_STRUCTURE_BYTES = 100 * 1024 * 1024
@@ -69,8 +70,6 @@ STRUCTURE_ID_PATTERN = re.compile(
     r"^(?P<namespace>[a-z0-9][a-z0-9_.-]{0,31}):(?P<name>[a-z0-9][a-z0-9_./-]{0,95})$"
 )
 STRUCTURE_LOADED_PATTERN = re.compile(r"Loaded a structure of name\s+(?P<identifier>[^\s]+)", re.IGNORECASE)
-TICKING_AREA_ADDED_PATTERN = re.compile(r"Added ticking area", re.IGNORECASE)
-TICKING_AREA_REMOVED_PATTERN = re.compile(r"Removed ticking area", re.IGNORECASE)
 
 
 def validate_command(value: object) -> str:
@@ -389,6 +388,35 @@ class BedrockConsoleBridge:
             if any(expected.search(str(line["text"])) for line in lines):
                 return received
 
+    def _command_until_result(
+        self,
+        command: str,
+        success: re.Pattern[str],
+        failure: re.Pattern[str],
+        timeout_seconds: float,
+    ) -> list[dict[str, Any]]:
+        """Wait for a correlated success or error marker from the behavior pack."""
+        _, cursor = self.submit(command)
+        deadline = time.monotonic() + timeout_seconds
+        received: list[dict[str, Any]] = []
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RuntimeError("El addon no confirmó la colocación de la estructura a tiempo.")
+            lines = self.output.wait_after(cursor, remaining)
+            if not lines:
+                continue
+            cursor = lines[-1]["id"]
+            received.extend(lines)
+            for line in lines:
+                text = str(line["text"])
+                failed = failure.search(text)
+                if failed:
+                    detail = failed.groupdict().get("detail") or "El addon rechazó la colocación."
+                    raise RuntimeError(detail.strip())
+                if success.search(text):
+                    return received
+
     def export_structure(self, source_id: object) -> dict[str, str | int]:
         """Extract one disk-saved structure from a short, held world snapshot.
 
@@ -584,26 +612,35 @@ class BedrockConsoleBridge:
         max_x = x + max(value[0] for value in transformed)
         min_z = z + min(value[1] for value in transformed)
         max_z = z + max(value[1] for value in transformed)
-        area_name = f"spb_place_{uuid.uuid4().hex[:12]}"
-        add = f"tickingarea add {min_x} 0 {min_z} {max_x} 0 {max_z} {area_name} true"
-        load = f"structure load {identifier} {x} {y} {z} {rotation} {mirror} true true"
+        request_id = uuid.uuid4().hex[:12]
+        payload = json.dumps(
+            {
+                "request": request_id,
+                "structure": identifier,
+                "x": x,
+                "y": y,
+                "z": z,
+                "minX": min_x,
+                "maxX": max_x,
+                "minZ": min_z,
+                "maxZ": max_z,
+                "rotation": rotation,
+                "mirror": mirror,
+            },
+            separators=(",", ":"),
+        )
+        command = f"scriptevent spb:structure_place {payload}"
+        success = re.compile(rf"SPB_STRUCTURE_PLACE\s+{request_id}\s+OK\b")
+        failure = re.compile(
+            rf"SPB_STRUCTURE_PLACE\s+{request_id}\s+ERROR(?:\s+(?P<detail>.*))?$"
+        )
         with self._query_lock:
-            added = False
-            try:
-                self._command_until(add, TICKING_AREA_ADDED_PATTERN, STRUCTURE_COMMAND_TIMEOUT_SECONDS)
-                added = True
-                self._command_until(
-                    load,
-                    re.compile(rf"Loaded a structure of name\s+{re.escape(identifier)}\b", re.IGNORECASE),
-                    STRUCTURE_COMMAND_TIMEOUT_SECONDS,
-                )
-            finally:
-                if added:
-                    self._command_until(
-                        f"tickingarea remove {area_name}",
-                        TICKING_AREA_REMOVED_PATTERN,
-                        STRUCTURE_COMMAND_TIMEOUT_SECONDS,
-                    )
+            self._command_until_result(
+                command,
+                success,
+                failure,
+                STRUCTURE_PLACEMENT_TIMEOUT_SECONDS,
+            )
         return {
             "ok": True,
             "structure": identifier,

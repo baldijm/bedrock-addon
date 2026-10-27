@@ -32,9 +32,9 @@ class StructureIdentifierTests(unittest.TestCase):
 
 
 class StructurePlacementTests(unittest.TestCase):
-    def test_preloads_the_complete_footprint_then_removes_the_temporary_area(self):
+    def test_delegates_loading_and_placement_to_the_addon_with_a_correlated_request(self):
         bridge = BedrockConsoleBridge(Path("."), OutputBuffer(), Path("unused.pid"))
-        bridge._command_until = Mock(return_value=[])
+        bridge._command_until_result = Mock(return_value=[])
         with patch.object(bridge_module.uuid, "uuid4", return_value=Mock(hex="0123456789abcdef")):
             result = bridge.place_structure(
                 {
@@ -48,11 +48,45 @@ class StructurePlacementTests(unittest.TestCase):
                 }
             )
 
-        commands = [call.args[0] for call in bridge._command_until.call_args_list]
-        self.assertEqual(commands[0], "tickingarea add 10 0 20 162 0 90 spb_place_0123456789ab true")
-        self.assertEqual(commands[1], "structure load spb:angel 10 80 20 0_degrees none true true")
-        self.assertEqual(commands[2], "tickingarea remove spb_place_0123456789ab")
+        command = bridge._command_until_result.call_args.args[0]
+        prefix, payload = command.split(" ", 2)[1:]
+        self.assertEqual(prefix, "spb:structure_place")
+        self.assertEqual(
+            __import__("json").loads(payload),
+            {
+                "request": "0123456789ab",
+                "structure": "spb:angel",
+                "x": 10,
+                "y": 80,
+                "z": 20,
+                "minX": 10,
+                "maxX": 162,
+                "minZ": 20,
+                "maxZ": 90,
+                "rotation": "0_degrees",
+                "mirror": "none",
+            },
+        )
         self.assertEqual(result["area"], {"from": {"x": 10, "z": 20}, "to": {"x": 162, "z": 90}})
+
+    def test_surfaces_the_correlated_addon_error(self):
+        output = OutputBuffer()
+        bridge = BedrockConsoleBridge(Path("."), output, Path("unused.pid"))
+
+        def submit(_command):
+            cursor = output.append("SPB_STRUCTURE_PLACE abcdef123456 ERROR no hay capacidad") - 1
+            return "command", cursor
+
+        bridge.submit = submit
+        with self.assertRaisesRegex(RuntimeError, "no hay capacidad"):
+            bridge._command_until_result(
+                "scriptevent spb:structure_place {}",
+                __import__("re").compile(r"SPB_STRUCTURE_PLACE\s+abcdef123456\s+OK\b"),
+                __import__("re").compile(
+                    r"SPB_STRUCTURE_PLACE\s+abcdef123456\s+ERROR(?:\s+(?P<detail>.*))?$"
+                ),
+                0.1,
+            )
 
     def test_rejects_unverified_or_unsafe_dimensions(self):
         bridge = BedrockConsoleBridge(Path("."), OutputBuffer(), Path("unused.pid"))
