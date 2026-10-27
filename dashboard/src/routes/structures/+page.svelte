@@ -31,7 +31,7 @@
 	let mirror = $state('none');
 	let confirmation = $state('');
 	let fileInput: HTMLInputElement;
-	let selectedFile = $state<File | null>(null);
+	let selectedFiles = $state<FileList | undefined>(undefined);
 	let environment = $state<'staging' | 'production'>('staging');
 
 	function activeEnvironment() {
@@ -95,7 +95,7 @@
 	}
 
 	async function importFile() {
-		const file = selectedFile;
+		const file = selectedFiles?.[0];
 		if (importing) return;
 		if (!file) {
 			toast.error('Selecciona un archivo .mcstructure antes de publicar.');
@@ -124,7 +124,7 @@
 			if (!response.ok) throw new Error(body.error ?? 'No se pudo importar.');
 			toast.success(`Archivo ${body.name} publicado`, { description: body.deployment });
 			fileInput.value = '';
-			selectedFile = null;
+			selectedFiles = new DataTransfer().files;
 			await load();
 		} catch (reason) {
 			toast.error('No se pudo importar el archivo', {
@@ -244,11 +244,9 @@
 						<Label for="file">Archivo .mcstructure</Label><Input
 							id="file"
 							bind:this={fileInput}
+							bind:files={selectedFiles}
 							type="file"
 							accept=".mcstructure,application/octet-stream"
-							onchange={(event) => {
-								selectedFile = event.currentTarget.files?.[0] ?? null;
-							}}
 						/>
 					</div>
 					<div class="grid gap-2">
@@ -262,7 +260,7 @@
 					><Button
 						variant="outline"
 						onclick={() => void importFile()}
-						disabled={importing || !target.trim() || !selectedFile}
+						disabled={importing || !target.trim() || !selectedFiles?.length}
 						>{#if importing}<LoaderCircle class="animate-spin" /> Publicando…{:else}<FileUp /> Importar
 							y publicar{/if}</Button
 					></Card.Footer
