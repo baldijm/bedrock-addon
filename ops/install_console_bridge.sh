@@ -15,6 +15,7 @@ visudo -cf /tmp/spb-staging-world-reset
 install -o root -g root -m 0440 /tmp/spb-staging-world-reset /etc/sudoers.d/spb-staging-world-reset
 install -d -o bedrock -g bedrock -m 0700 /var/lib/spb/staging-world-reset/requests
 install -d -o bedrock -g bedrock -m 0700 /var/lib/spb/structure-exports
+install -d -o bedrock -g bedrock -m 0750 /opt/bedrock-staging/behavior_packs/SPB_BP/structures/spb
 if [ -f /tmp/install_structure_tools.sh ]; then
   sh /tmp/install_structure_tools.sh
 fi
