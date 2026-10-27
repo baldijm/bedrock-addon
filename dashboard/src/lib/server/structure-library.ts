@@ -164,7 +164,10 @@ export async function storeStructure(
 			httpMetadata: { contentType: 'application/octet-stream' },
 			customMetadata: { name: safeName, version }
 		});
-		await Promise.all([body.pipeThrough(collector.stream).pipeTo(fixed.writable), upload]);
+		const [, object] = await Promise.all([
+			body.pipeThrough(collector.stream).pipeTo(fixed.writable),
+			upload
+		]);
 		if (!collector.size) throw new Error('La estructura no puede estar vacía.');
 		if (collector.size !== declaredSize)
 			throw new Error('El archivo recibido no coincide con el tamaño declarado.');
