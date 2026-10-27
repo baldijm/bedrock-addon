@@ -688,6 +688,9 @@ class BedrockConsoleBridge:
                 "maxX": max_x,
                 "minZ": min_z,
                 "maxZ": max_z,
+                "width": width,
+                "height": height,
+                "depth": depth,
                 "rotation": rotation,
                 "mirror": mirror,
                 "mode": mode,
@@ -697,7 +700,7 @@ class BedrockConsoleBridge:
         command = f"scriptevent spb:structure_place {payload}"
         success = re.compile(rf"SPB_STRUCTURE_PLACE\s+{request_id}\s+OK\b")
         failure = re.compile(
-            rf"SPB_STRUCTURE_PLACE\s+{request_id}\s+ERROR(?:\s+(?P<detail>.*))?$"
+            rf"SPB_STRUCTURE_PLACE\s+{request_id}\s+(?:ERROR|UNCONFIRMED)(?:\s+(?P<detail>.*))?$"
         )
         with self._query_lock:
             self._command_until_result(
