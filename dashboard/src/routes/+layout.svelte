@@ -6,6 +6,7 @@
 	import MapPinned from '@lucide/svelte/icons/map-pinned';
 	import Server from '@lucide/svelte/icons/server';
 	import Settings from '@lucide/svelte/icons/settings';
+	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import Terminal from '@lucide/svelte/icons/terminal';
 	import UsersRound from '@lucide/svelte/icons/users-round';
 	import { Toaster } from 'svelte-sonner';
@@ -54,6 +55,7 @@
 					<Sidebar.Menu>
 						<Sidebar.MenuItem><Sidebar.MenuButton isActive={isActive('/server')} tooltipContent="Configuración">{#snippet child({ props })}<a href="/server" {...props}><Settings /><span>Configuración</span></a>{/snippet}</Sidebar.MenuButton></Sidebar.MenuItem>
 						<Sidebar.MenuItem><Sidebar.MenuButton isActive={isActive('/releases')} tooltipContent="Mundos">{#snippet child({ props })}<a href="/releases" {...props}><Server /><span>Mundos</span></a>{/snippet}</Sidebar.MenuButton></Sidebar.MenuItem>
+						<Sidebar.MenuItem><Sidebar.MenuButton isActive={isActive('/updates')} tooltipContent="Actualizaciones">{#snippet child({ props })}<a href="/updates" {...props}><RefreshCw /><span>Actualizaciones</span></a>{/snippet}</Sidebar.MenuButton></Sidebar.MenuItem>
 					</Sidebar.Menu>
 				</Sidebar.Group>
 			</Sidebar.Content>

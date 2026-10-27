@@ -44,6 +44,10 @@ SERVER_PROPERTIES_FILE = "server.properties"
 WORLD_RESET_REQUESTS = Path("/var/lib/spb/staging-world-reset/requests")
 WORLD_RESET_STATUS = Path("/var/lib/spb/staging-world-reset/status.json")
 WORLD_RESET_UNIT_PREFIX = "spb-staging-world-reset@"
+UPDATE_REQUESTS = Path("/var/lib/spb/bedrock-update/requests")
+UPDATE_STATUS = Path("/var/lib/spb/bedrock-update/status")
+UPDATE_UNIT_PREFIX = "spb-bedrock-update@"
+VERSION_LOG_PATTERN = re.compile(r"\bVersion:\s*(?P<version>[0-9]+(?:\.[0-9]+){2,3})\b", re.IGNORECASE)
 SERVER_PROPERTY_SPECS: dict[str, tuple[str, int | None, int | None, set[str] | None]] = {
     "server-name": ("text", None, None, None),
     "level-name": ("level", None, None, None),
@@ -224,6 +228,61 @@ def read_world_reset_status() -> dict[str, Any]:
     except (OSError, json.JSONDecodeError):
         return {"state": "unknown"}
     return value if isinstance(value, dict) else {"state": "unknown"}
+
+
+def environment_for_root(root: Path) -> str:
+    return "production" if root == Path("/opt/bedrock") else "staging"
+
+
+def read_update_status(root: Path, output: "OutputBuffer") -> dict[str, Any]:
+    environment = environment_for_root(root)
+    result: dict[str, Any] = {"environment": environment, "state": "idle"}
+    version_file = root / ".spb-bedrock-version.json"
+    try:
+        stored = json.loads(version_file.read_text(encoding="utf-8"))
+        if isinstance(stored, dict) and isinstance(stored.get("version"), str):
+            result["installedVersion"] = stored["version"]
+    except (OSError, json.JSONDecodeError):
+        pass
+    if "installedVersion" not in result:
+        lines, _ = output.after(0)
+        for line in reversed(lines):
+            match = VERSION_LOG_PATTERN.search(str(line.get("text", "")))
+            if match:
+                result["installedVersion"] = match.group("version")
+                break
+    status_file = UPDATE_STATUS / f"{environment}.json"
+    try:
+        stored_status = json.loads(status_file.read_text(encoding="utf-8"))
+        if isinstance(stored_status, dict):
+            result.update(stored_status)
+    except (OSError, json.JSONDecodeError):
+        pass
+    return result
+
+
+def request_update(root: Path) -> dict[str, str]:
+    environment = environment_for_root(root)
+    if not UPDATE_REQUESTS.is_dir() or UPDATE_REQUESTS.is_symlink():
+        raise RuntimeError("El actualizador de Bedrock no está instalado.")
+    current = read_update_status(root, OutputBuffer(limit=1))
+    if current.get("state") in {"preparing", "downloading", "validating", "backing-up", "stopping", "installing", "starting"}:
+        raise RuntimeError("Ya hay una actualización en curso.")
+    operation = uuid.uuid4().hex
+    request = UPDATE_REQUESTS / f"{operation}.json"
+    request.write_text(json.dumps({"id": operation, "environment": environment}, separators=(",", ":")), encoding="utf-8")
+    try:
+        subprocess.run(
+            ["sudo", "/bin/systemctl", "start", "--no-block", f"{UPDATE_UNIT_PREFIX}{operation}.service"],
+            check=True,
+            timeout=10,
+            capture_output=True,
+            text=True,
+        )
+    except (subprocess.SubprocessError, OSError) as error:
+        request.unlink(missing_ok=True)
+        raise RuntimeError("No se pudo iniciar la actualización de Bedrock.") from error
+    return {"ok": "true", "environment": environment, "operation": operation}
 
 
 class OutputBuffer:
@@ -788,6 +847,12 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
                 {"ok": True, "bedrockRunning": self.bridge_server.bridge.is_running()},
             )
             return
+        if parsed.path == "/updates/status":
+            self._send_json(
+                HTTPStatus.OK,
+                read_update_status(self.bridge_server.bridge.root, self.bridge_server.output),
+            )
+            return
         if parsed.path == "/logs":
             query = parse_qs(parsed.query)
             try:
@@ -878,7 +943,7 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
         if not self._require_authorization():
             return
         path = urlparse(self.path).path
-        if path not in {"/commands", "/properties", "/gamerules", "/world/reset", "/structures/export", "/structures/import", "/structures/place"}:
+        if path not in {"/commands", "/properties", "/gamerules", "/world/reset", "/updates", "/structures/export", "/structures/import", "/structures/place"}:
             self._send_json(HTTPStatus.NOT_FOUND, {"error": "No existe esa ruta."})
             return
         try:
@@ -912,6 +977,11 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
             if path == "/world/reset":
                 operation = request_world_reset(self.bridge_server.bridge.root, body)
                 self._send_json(HTTPStatus.ACCEPTED, {"ok": True, "environment": "staging", "operation": operation})
+                return
+            if path == "/updates":
+                if body != {"confirmed": True}:
+                    raise ValueError("Confirma la actualización antes de continuar.")
+                self._send_json(HTTPStatus.ACCEPTED, request_update(self.bridge_server.bridge.root))
                 return
             if path == "/properties":
                 changed = update_server_properties(

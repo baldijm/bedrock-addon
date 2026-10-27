@@ -24,6 +24,10 @@ ROOT = Path("/opt/bedrock")
 WORLDS_ROOT = ROOT / "worlds"
 PROMOTION_STATUS = Path("/var/lib/spb/production-world-promotion/status.json")
 PROMOTION_UNIT = "spb-production-world-promote@{}.service"
+UPDATE_REQUESTS = Path("/var/lib/spb/bedrock-update/requests")
+UPDATE_STATUS = Path("/var/lib/spb/bedrock-update/status/production.json")
+UPDATE_UNIT = "spb-bedrock-update@{}.service"
+VERSION_LOG_PATTERN = re.compile(r"\bVersion:\s*(?P<version>[0-9]+(?:\.[0-9]+){2,3})\b", re.IGNORECASE)
 SAFE_PROPERTIES = {
     "server-name", "level-name", "gamemode", "difficulty", "max-players",
     "view-distance", "tick-distance", "allow-cheats", "allow-list",
@@ -177,6 +181,48 @@ def request_promotion(confirmation: object) -> dict[str, object]:
     return {"ok": True, "operation": operation, "productionWorld": world, "state": "queued"}
 
 
+def update_status() -> dict[str, object]:
+    result: dict[str, object] = {"environment": "production", "state": "idle"}
+    try:
+        stored = json.loads((ROOT / ".spb-bedrock-version.json").read_text(encoding="utf-8"))
+        if isinstance(stored, dict) and isinstance(stored.get("version"), str):
+            result["installedVersion"] = stored["version"]
+    except (OSError, json.JSONDecodeError):
+        pass
+    if "installedVersion" not in result:
+        for line in reversed(journal_lines()):
+            match = VERSION_LOG_PATTERN.search(str(line["text"]))
+            if match:
+                result["installedVersion"] = match.group("version")
+                break
+    try:
+        stored_status = json.loads(UPDATE_STATUS.read_text(encoding="utf-8"))
+        if isinstance(stored_status, dict):
+            result.update(stored_status)
+    except (OSError, json.JSONDecodeError):
+        pass
+    return result
+
+
+def request_update(confirmation: object) -> dict[str, object]:
+    if confirmation is not True:
+        raise ValueError("Confirma la actualización antes de continuar.")
+    if not UPDATE_REQUESTS.is_dir() or UPDATE_REQUESTS.is_symlink():
+        raise RuntimeError("El actualizador de Bedrock no está instalado.")
+    status = update_status()
+    if status.get("state") in {"preparing", "downloading", "validating", "backing-up", "stopping", "installing", "starting"}:
+        raise RuntimeError("Ya hay una actualización en curso.")
+    operation = uuid.uuid4().hex
+    request = UPDATE_REQUESTS / f"{operation}.json"
+    request.write_text(json.dumps({"id": operation, "environment": "production"}, separators=(",", ":")), encoding="utf-8")
+    try:
+        subprocess.run(["systemctl", "start", "--no-block", UPDATE_UNIT.format(operation)], check=True, timeout=15, capture_output=True, text=True)
+    except subprocess.SubprocessError as error:
+        request.unlink(missing_ok=True)
+        raise RuntimeError("No se pudo iniciar la actualización de producción.") from error
+    return {"ok": True, "operation": operation, "environment": "production", "state": "queued"}
+
+
 class ObserverHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
@@ -248,13 +294,20 @@ class ObserverRequestHandler(BaseHTTPRequestHandler):
             except RuntimeError as error:
                 self.send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": str(error)})
             return
+        if path == "/updates/status":
+            try:
+                self.send_json(HTTPStatus.OK, update_status())
+            except RuntimeError as error:
+                self.send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": str(error)})
+            return
         self.send_json(HTTPStatus.NOT_FOUND, {"error": "No existe esa ruta."})
 
     def do_POST(self) -> None:  # noqa: N802
         if not self.authorized():
             self.send_json(HTTPStatus.UNAUTHORIZED, {"error": "No autorizado."})
             return
-        if urlparse(self.path).path != "/world/promotion":
+        path = urlparse(self.path).path
+        if path not in {"/world/promotion", "/updates"}:
             self.send_json(HTTPStatus.METHOD_NOT_ALLOWED, {"error": "Producción está disponible sólo en lectura."})
             return
         try:
@@ -264,7 +317,10 @@ class ObserverRequestHandler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(length))
             if not isinstance(body, dict):
                 raise ValueError("Solicitud de promoción inválida.")
-            self.send_json(HTTPStatus.ACCEPTED, request_promotion(body.get("confirmation")))
+            if path == "/updates":
+                self.send_json(HTTPStatus.ACCEPTED, request_update(body.get("confirmed")))
+            else:
+                self.send_json(HTTPStatus.ACCEPTED, request_promotion(body.get("confirmation")))
         except ValueError as error:
             self.send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
         except subprocess.SubprocessError:
