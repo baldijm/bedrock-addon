@@ -142,7 +142,10 @@
 		try {
 			const response = await fetch(`/api/structures?name=${encodeURIComponent(target)}`, {
 				method: 'POST',
-				headers: { 'content-type': 'application/octet-stream' },
+				headers: {
+					'content-type': 'application/octet-stream',
+					'x-spb-structure-size': String(file.size)
+				},
 				body: file
 			});
 			const body = (await response.json().catch(() => ({}))) as {

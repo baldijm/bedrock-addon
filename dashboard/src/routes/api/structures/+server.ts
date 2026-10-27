@@ -54,7 +54,11 @@ export const POST: RequestHandler = async ({ request, url }) => {
 	if (!(await isAuthenticated(request))) return unauthorized();
 	try {
 		const name = validateStructureName(url.searchParams.get('name'));
-		const result = await storeStructure(name, request.body, request.headers.get('content-length'));
+		const result = await storeStructure(
+			name,
+			request.body,
+			request.headers.get('x-spb-structure-size')
+		);
 		return json(
 			{
 				ok: true,

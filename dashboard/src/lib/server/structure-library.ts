@@ -145,28 +145,29 @@ function headerCollector(limit: number) {
 export async function storeStructure(
 	name: unknown,
 	body: ReadableStream<Uint8Array> | null,
-	contentLength: string | null
+	declaredSizeHeader: string | null
 ) {
 	const safeName = validateStructureName(name);
 	const limit = await structureUploadLimit();
 	if (!body) throw new Error('No se recibió el archivo de estructura.');
-	const declaredSize = contentLength === null ? null : Number(contentLength);
-	if (
-		declaredSize !== null &&
-		(!Number.isFinite(declaredSize) || declaredSize < 1 || declaredSize > limit)
-	)
+	const declaredSize = Number(declaredSizeHeader);
+	if (!Number.isSafeInteger(declaredSize) || declaredSize < 1 || declaredSize > limit)
 		throw new Error(
 			`La estructura debe medir entre 1 byte y ${(limit / 1024 / 1024).toFixed(0)} MiB.`
 		);
 	const version = crypto.randomUUID();
 	const objectKey = `structures/${safeName}/${version}.mcstructure`;
 	const collector = headerCollector(limit);
+	const fixed = new FixedLengthStream(declaredSize);
 	try {
-		const object = await env.STRUCTURES.put(objectKey, body.pipeThrough(collector.stream), {
+		const upload = env.STRUCTURES.put(objectKey, fixed.readable, {
 			httpMetadata: { contentType: 'application/octet-stream' },
 			customMetadata: { name: safeName, version }
 		});
+		await Promise.all([body.pipeThrough(collector.stream).pipeTo(fixed.writable), upload]);
 		if (!collector.size) throw new Error('La estructura no puede estar vacía.');
+		if (collector.size !== declaredSize)
+			throw new Error('El archivo recibido no coincide con el tamaño declarado.');
 		const dimensions = readStructureDimensions(collector.header());
 		const createdAt = new Date().toISOString();
 		await database()
@@ -181,7 +182,7 @@ export async function storeStructure(
 				safeName,
 				version,
 				objectKey,
-				collector.size,
+				declaredSize,
 				object?.etag ?? '',
 				dimensions.x,
 				dimensions.y,
@@ -192,7 +193,7 @@ export async function storeStructure(
 			.run();
 		return {
 			name: safeName,
-			size: collector.size,
+			size: declaredSize,
 			version,
 			objectKey,
 			etag: object?.etag ?? '',
