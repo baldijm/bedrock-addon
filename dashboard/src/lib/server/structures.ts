@@ -4,7 +4,7 @@ const REPOSITORY = 'baldijm/bedrock-addon';
 const BRANCH = 'main';
 const DIRECTORY = 'BP/structures/spb';
 const NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/;
-export const MAX_STRUCTURE_BYTES = 8 * 1024 * 1024;
+export const MAX_STRUCTURE_BYTES = 20 * 1024 * 1024;
 
 export type StructureEntry = { name: string; size: number; sha: string; path: string };
 
@@ -129,7 +129,7 @@ export async function commitStructure(name: unknown, bytes: Uint8Array, source: 
 	const safeName = validateStructureName(name);
 	requireToken();
 	if (!bytes.byteLength || bytes.byteLength > MAX_STRUCTURE_BYTES)
-		throw new Error('La estructura debe medir entre 1 byte y 8 MiB.');
+		throw new Error('La estructura debe medir entre 1 byte y 20 MiB.');
 	const path = `${DIRECTORY}/${safeName}.mcstructure`;
 	let sha: string | undefined;
 	try {

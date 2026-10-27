@@ -105,8 +105,8 @@
 			toast.error('El archivo debe tener extensión .mcstructure.');
 			return;
 		}
-		if (!file.size || file.size > 8 * 1024 * 1024) {
-			toast.error('La estructura debe medir entre 1 byte y 8 MiB.');
+		if (!file.size || file.size > 20 * 1024 * 1024) {
+			toast.error('La estructura debe medir entre 1 byte y 20 MiB.');
 			return;
 		}
 		importing = true;

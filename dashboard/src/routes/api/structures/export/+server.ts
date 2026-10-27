@@ -13,7 +13,7 @@ function decode(value: unknown) {
 	const raw = atob(value);
 	const bytes = Uint8Array.from(raw, (character) => character.charCodeAt(0));
 	if (!bytes.byteLength || bytes.byteLength > MAX_STRUCTURE_BYTES)
-		throw new Error('La estructura excede el límite seguro de 8 MiB.');
+		throw new Error('La estructura excede el límite seguro de 20 MiB.');
 	return bytes;
 }
 
