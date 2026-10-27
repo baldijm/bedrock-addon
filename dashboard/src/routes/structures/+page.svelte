@@ -317,8 +317,9 @@
 				><Card.Title
 					>Colocar en {environment === 'production' ? 'producción' : 'staging'}</Card.Title
 				><Card.Description
-					>Esto modifica el mundo seleccionado. La plantilla debe haber llegado ya a este entorno
-					mediante el despliegue correspondiente.</Card.Description
+					>Esto modifica el mundo seleccionado. El dashboard cubre temporalmente toda la huella y
+					espera la confirmación real de Bedrock. Antes de colocar en una zona remota, llega o
+					teletranspórtate allí con un jugador para que Bedrock pueda cargarla.</Card.Description
 				></Card.Header
 			><Card.Content class="grid gap-4 md:grid-cols-3"
 				><div class="grid gap-2 md:col-span-3">
