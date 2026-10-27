@@ -224,7 +224,7 @@
 			if (!response.ok) throw new Error(body.error ?? 'No se pudo analizar la estructura.');
 			staticCandidates = body.candidates ?? [];
 			staticBlocks = staticCandidates.map((candidate) => candidate.id);
-			if (!staticTarget) staticTarget = `${staticSource}-static`;
+			if (!staticTarget) staticTarget = `${staticSource}_static`;
 			if (!staticCandidates.length)
 				toast.message('No se detectaron bloques con gravedad que tengan una variante estática.');
 		} catch (reason) {
@@ -539,7 +539,7 @@
 						onchange={() => {
 							staticCandidates = [];
 							staticBlocks = [];
-							staticTarget = staticSource ? `${staticSource}-static` : '';
+							staticTarget = staticSource ? `${staticSource}_static` : '';
 						}}
 						><option value="">Selecciona una estructura</option>{#each structures as structure}<option
 							value={structure.name}>spb:{structure.name}</option
@@ -556,7 +556,7 @@
 						<Label for="static-target">Nombre de la variante</Label><Input
 							id="static-target"
 							bind:value={staticTarget}
-							placeholder="finn-static"
+							placeholder="finn_static"
 						/>
 					</div>
 					<p class="text-sm text-muted-foreground">
