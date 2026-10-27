@@ -1,7 +1,12 @@
 import type { RequestHandler } from './$types';
 import { isAuthenticated, json, unauthorized } from '#lib/server/auth';
-import { consoleBridgeRequest, type ServerEnvironment } from '#lib/server/bridge';
+import {
+	consoleBridgeRequest,
+	consoleBridgeStreamRequest,
+	type ServerEnvironment
+} from '#lib/server/bridge';
 import { describeStructure, validateStructureName } from '#lib/server/structures';
+import { describeStoredStructure, readStoredStructure } from '#lib/server/structure-library';
 import { resolveEnvironment } from '#lib/server/environment';
 import {
 	resolveStructureOrigin,
@@ -44,7 +49,8 @@ export const POST: RequestHandler = async ({ request }) => {
 		const expected = `spb:${name} (${anchorLabel}) @ ${x} ${y} ${z}`;
 		if (body.confirmation !== expected)
 			throw new Error(`Escribe exactamente ${expected} para confirmar.`);
-		const structure = await describeStructure(name);
+		const stored = await describeStoredStructure(name);
+		const structure = stored ?? (await describeStructure(name));
 		const origin = resolveStructureOrigin(
 			{ x, y, z },
 			structure.dimensions,
@@ -58,6 +64,24 @@ export const POST: RequestHandler = async ({ request }) => {
 		let result: unknown;
 		let confirmed = true;
 		try {
+			if (stored) {
+				if (environment !== 'staging')
+					throw new Error(
+						'Esta estructura está en R2. Su colocación en producción se habilitará con el mantenimiento autorizado de ese bridge.'
+					);
+				const object = await readStoredStructure(name);
+				if (!object) throw new Error('La estructura de R2 ya no está disponible.');
+				await consoleBridgeStreamRequest('staging', '/structures/import', {
+					method: 'POST',
+					headers: {
+						'content-type': 'application/octet-stream',
+						'content-length': String(object.entry.size),
+						'x-spb-structure-id': `spb:${name}`,
+						'x-spb-structure-etag': object.entry.etag
+					},
+					body: object.object.body
+				});
+			}
 			result = await consoleBridgeRequest(environment, '/structures/place', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },

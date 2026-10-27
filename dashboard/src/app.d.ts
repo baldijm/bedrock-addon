@@ -3,6 +3,7 @@
 declare global {
 	interface Env {
 		DB: D1Database;
+		STRUCTURES: R2Bucket;
 		ADMIN_PASSWORD: string;
 		SESSION_SECRET: string;
 		STAGING_SERVER_TOKEN: string;

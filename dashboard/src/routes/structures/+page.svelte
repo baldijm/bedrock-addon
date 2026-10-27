@@ -12,6 +12,7 @@
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
+	import { Slider } from '#lib/components/ui/slider/index.js';
 	import {
 		resolveStructureOrigin,
 		type StructureAnchor,
@@ -25,6 +26,7 @@
 		sha: string;
 		path: string;
 		dimensions: { x: number; y: number; z: number } | null;
+		source?: 'github' | 'r2';
 	};
 
 	let structures = $state<Structure[]>([]);
@@ -32,6 +34,9 @@
 	let loading = $state(true);
 	let exporting = $state(false);
 	let importing = $state(false);
+	let savingUploadLimit = $state(false);
+	let uploadLimitMiB = $state(20);
+	let savedUploadLimitMiB = $state(20);
 	let placing = $state(false);
 	let source = $state('mystructure:');
 	let target = $state('');
@@ -75,10 +80,15 @@
 			const response = await fetch('/api/structures');
 			const body = (await response.json().catch(() => ({}))) as {
 				structures?: Structure[];
+				maxBytes?: number;
 				error?: string;
 			};
 			if (!response.ok) throw new Error(body.error ?? 'No se pudo leer la biblioteca.');
 			structures = body.structures ?? [];
+			if (typeof body.maxBytes === 'number') {
+				uploadLimitMiB = Math.round(body.maxBytes / 1024 / 1024);
+				savedUploadLimitMiB = uploadLimitMiB;
+			}
 			if (!selected && structures[0]) selected = structures[0].name;
 		} catch (reason) {
 			error = reason instanceof Error ? reason.message : 'No se pudo leer la biblioteca.';
@@ -124,8 +134,8 @@
 			toast.error('El archivo debe tener extensión .mcstructure.');
 			return;
 		}
-		if (!file.size || file.size > 20 * 1024 * 1024) {
-			toast.error('La estructura debe medir entre 1 byte y 20 MiB.');
+		if (!file.size || file.size > savedUploadLimitMiB * 1024 * 1024) {
+			toast.error(`La estructura debe medir entre 1 byte y ${savedUploadLimitMiB} MiB.`);
 			return;
 		}
 		importing = true;
@@ -151,6 +161,35 @@
 			});
 		} finally {
 			importing = false;
+		}
+	}
+
+	async function saveUploadLimit() {
+		if (savingUploadLimit || uploadLimitMiB === savedUploadLimitMiB) return;
+		savingUploadLimit = true;
+		try {
+			const response = await fetch('/api/structures/upload-limit', {
+				method: 'PUT',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ mebibytes: uploadLimitMiB })
+			});
+			const body = (await response.json().catch(() => ({}))) as {
+				error?: string;
+				maxBytes?: number;
+			};
+			if (!response.ok) throw new Error(body.error ?? 'No se pudo guardar el límite.');
+			savedUploadLimitMiB = Math.round((body.maxBytes ?? 0) / 1024 / 1024);
+			uploadLimitMiB = savedUploadLimitMiB;
+			toast.success('Límite de importación actualizado', {
+				description: `Ahora permite archivos de hasta ${savedUploadLimitMiB} MiB.`
+			});
+		} catch (reason) {
+			toast.error('No se pudo guardar el límite', {
+				description: reason instanceof Error ? reason.message : undefined
+			});
+			uploadLimitMiB = savedUploadLimitMiB;
+		} finally {
+			savingUploadLimit = false;
 		}
 	}
 
@@ -243,8 +282,9 @@
 			</p>
 			<h1 class="text-3xl font-semibold tracking-tight md:text-4xl">Estructuras</h1>
 			<p class="max-w-3xl text-sm text-muted-foreground">
-				La biblioteca vive en GitHub, dentro de <code>BP/structures/spb</code>. Exportar o importar
-				publica una plantilla; colocarla en un mundo es una acción distinta y confirmada.
+				Las estructuras nuevas se guardan de forma privada en R2. Las entradas heredadas de
+				<code>BP/structures/spb</code> siguen disponibles mientras se migra la biblioteca. Colocarlas
+				en un mundo es una acción distinta y confirmada.
 			</p>
 		</section>
 		{#if error}<Alert.Root variant="destructive"
@@ -290,10 +330,36 @@
 					><Card.Title class="flex items-center gap-2"
 						><FileUp class="size-5" /> Importar archivo</Card.Title
 					><Card.Description
-						>Publica un archivo <code>.mcstructure</code> ya existente en la misma biblioteca versionada.</Card.Description
+						>Guarda el binario privado en R2; el archivo no modifica ningún mundo hasta colocarlo.</Card.Description
 					></Card.Header
 				><Card.Content class="grid gap-4"
-					><div class="grid gap-2">
+					><div class="grid gap-3 rounded-md border p-3">
+						<div class="flex items-baseline justify-between gap-3">
+							<Label for="upload-limit">Límite de importación</Label><span
+								class="text-sm font-medium tabular-nums">{uploadLimitMiB} MiB</span
+							>
+						</div>
+						<Slider
+							id="upload-limit"
+							type="single"
+							min={1}
+							max={100}
+							step={1}
+							bind:value={uploadLimitMiB}
+						/>
+						<div class="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+							<span>1 MiB</span><span>100 MiB</span>
+						</div>
+						<Button
+							size="sm"
+							variant="outline"
+							onclick={() => void saveUploadLimit()}
+							disabled={savingUploadLimit || uploadLimitMiB === savedUploadLimitMiB}
+							>{#if savingUploadLimit}<LoaderCircle class="animate-spin" /> Guardando…{:else}Guardar
+								límite{/if}</Button
+						>
+					</div>
+					<div class="grid gap-2">
 						<Label for="file">Archivo .mcstructure</Label><Input
 							id="file"
 							bind:this={fileInput}
@@ -313,7 +379,11 @@
 					><Button
 						variant="outline"
 						onclick={() => void importFile()}
-						disabled={importing || !target.trim() || !selectedFiles?.length}
+						disabled={importing ||
+							savingUploadLimit ||
+							uploadLimitMiB !== savedUploadLimitMiB ||
+							!target.trim() ||
+							!selectedFiles?.length}
 						>{#if importing}<LoaderCircle class="animate-spin" /> Publicando…{:else}<FileUp /> Importar
 							y publicar{/if}</Button
 					></Card.Footer
@@ -324,7 +394,7 @@
 			><Card.Header
 				><Card.Title>Biblioteca versionada</Card.Title><Card.Description
 					>{loading
-						? 'Consultando GitHub…'
+						? 'Consultando la biblioteca…'
 						: `${structures.length} estructura${structures.length === 1 ? '' : 's'} disponible${structures.length === 1 ? '' : 's'}.`}</Card.Description
 				></Card.Header
 			><Card.Content
@@ -335,6 +405,9 @@
 									<span class="text-sm text-muted-foreground"
 										>{formatDimensions(structure.dimensions)}</span
 									>
+									{#if structure.source === 'r2'}<span class="text-xs text-muted-foreground"
+											>R2 privado</span
+										>{/if}
 								</div>
 								<span class="text-sm text-muted-foreground">{formatSize(structure.size)}</span
 								><Button

@@ -16,6 +16,12 @@
 			"migrations_dir": "migrations"
 		}
 	],
+	"r2_buckets": [
+		{
+			"binding": "STRUCTURES",
+			"bucket_name": "spb-structures"
+		}
+	],
 	"workers_dev": true,
 	"preview_urls": true
 }

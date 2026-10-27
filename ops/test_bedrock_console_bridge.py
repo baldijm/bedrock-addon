@@ -60,6 +60,34 @@ class StructurePlacementTests(unittest.TestCase):
             bridge.place_structure({"structure": "spb:angel", "x": 0, "y": 80, "z": 0})
 
 
+class StructureImportTests(unittest.TestCase):
+    def test_writes_to_the_active_world_structure_directory(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            world = root / "worlds" / "Forever World"
+            (world / "db").mkdir(parents=True)
+            (root / "server.properties").write_text("level-name=Forever World\n", encoding="utf-8")
+            bridge = BedrockConsoleBridge(root, OutputBuffer(), root / "unused.pid")
+            result = bridge.import_structure("spb:plaza", __import__("io").BytesIO(b"abc"), 3)
+            target = world / "structures" / "spb" / "plaza.mcstructure"
+            self.assertEqual(target.read_bytes(), b"abc")
+            self.assertEqual(result["structure"], "spb:plaza")
+
+    def test_rejects_incomplete_upload_without_replacing_an_existing_file(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            world = root / "worlds" / "Forever World"
+            target = world / "structures" / "spb" / "plaza.mcstructure"
+            target.parent.mkdir(parents=True)
+            (world / "db").mkdir(parents=True)
+            target.write_bytes(b"previous")
+            (root / "server.properties").write_text("level-name=Forever World\n", encoding="utf-8")
+            bridge = BedrockConsoleBridge(root, OutputBuffer(), root / "unused.pid")
+            with self.assertRaises(ValueError):
+                bridge.import_structure("spb:plaza", __import__("io").BytesIO(b"short"), 6)
+            self.assertEqual(target.read_bytes(), b"previous")
+
+
 class OutputBufferTests(unittest.TestCase):
     def test_returns_only_newer_output(self):
         output = OutputBuffer(limit=3)

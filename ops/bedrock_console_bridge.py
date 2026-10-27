@@ -37,6 +37,7 @@ PLAYER_LIST_TIMEOUT_SECONDS = 2
 STRUCTURE_COMMAND_TIMEOUT_SECONDS = 45
 STRUCTURE_EXTRACT_TIMEOUT_SECONDS = 90
 MAX_STRUCTURE_BYTES = 20 * 1024 * 1024
+MAX_IMPORTED_STRUCTURE_BYTES = 100 * 1024 * 1024
 STRUCTURE_EXPORT_DIRECTORY = Path("/var/lib/spb/structure-exports")
 SERVER_PROPERTIES_FILE = "server.properties"
 WORLD_RESET_REQUESTS = Path("/var/lib/spb/staging-world-reset/requests")
@@ -456,6 +457,52 @@ class BedrockConsoleBridge:
                 encoded = base64.b64encode(result.read_bytes()).decode("ascii")
                 return {"source": identifier, "size": size, "content": encoded}
 
+    def import_structure(self, structure_id: object, stream: Any, size: int) -> dict[str, str | int]:
+        """Atomically materialize a verified R2 structure in the active world's disk library.
+
+        The private bridge accepts only its authenticated Worker.  It never follows
+        links or lets the supplied Bedrock identifier escape the active world.
+        """
+        identifier, namespace, name = validate_structure_id(structure_id)
+        if not 1 <= size <= MAX_IMPORTED_STRUCTURE_BYTES:
+            raise ValueError("La estructura debe medir entre 1 byte y 100 MiB.")
+        properties = parse_server_properties(self.root / SERVER_PROPERTIES_FILE)
+        world_name = properties.get("level-name", "")
+        if not world_name or world_name in {".", ".."} or "/" in world_name or "\\" in world_name:
+            raise RuntimeError("El nombre del mundo activo no es válido.")
+        world = self.root / "worlds" / world_name
+        if world.is_symlink() or not world.is_dir() or not (world / "db").is_dir():
+            raise RuntimeError("No se encontró el mundo activo para importar la estructura.")
+        structures = world / "structures"
+        if structures.exists() and structures.is_symlink():
+            raise RuntimeError("La carpeta de estructuras no es válida.")
+        target_directory = structures / namespace
+        target_directory.mkdir(mode=0o750, parents=True, exist_ok=True)
+        if target_directory.is_symlink():
+            raise RuntimeError("La carpeta de estructuras no es válida.")
+        target = (target_directory / f"{name}.mcstructure").resolve()
+        if target.parent != target_directory.resolve():
+            raise ValueError("El identificador de estructura no es seguro.")
+        written = 0
+        temporary = target_directory / f".{name}.{uuid.uuid4().hex}.tmp"
+        try:
+            with temporary.open("xb") as output:
+                while written < size:
+                    chunk = stream.read(min(64 * 1024, size - written))
+                    if not chunk:
+                        raise ValueError("La carga de la estructura quedó incompleta.")
+                    output.write(chunk)
+                    written += len(chunk)
+                if stream.read(1):
+                    raise ValueError("La carga de la estructura excede el tamaño declarado.")
+                output.flush()
+                os.fsync(output.fileno())
+            os.chmod(temporary, 0o640)
+            os.replace(temporary, target)
+        finally:
+            temporary.unlink(missing_ok=True)
+        return {"ok": True, "structure": identifier, "size": written}
+
     def place_structure(self, request: object) -> dict[str, Any]:
         """Place a structure only after its complete horizontal footprint is ticking.
 
@@ -746,13 +793,26 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
         if not self._require_authorization():
             return
         path = urlparse(self.path).path
-        if path not in {"/commands", "/properties", "/gamerules", "/world/reset", "/structures/export", "/structures/place"}:
+        if path not in {"/commands", "/properties", "/gamerules", "/world/reset", "/structures/export", "/structures/import", "/structures/place"}:
             self._send_json(HTTPStatus.NOT_FOUND, {"error": "No existe esa ruta."})
             return
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
             length = 0
+        if path == "/structures/import":
+            try:
+                self._send_json(
+                    HTTPStatus.OK,
+                    self.bridge_server.bridge.import_structure(
+                        self.headers.get("X-SPB-Structure-Id"), self.rfile, length
+                    ),
+                )
+            except (OSError, ValueError) as error:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+            except RuntimeError as error:
+                self._send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": str(error)})
+            return
         if length < 1 or length > MAX_BODY_BYTES:
             self._send_json(HTTPStatus.BAD_REQUEST, {"error": "Cuerpo inválido."})
             return

@@ -1,11 +1,8 @@
 import type { RequestHandler } from './$types';
 import { isAuthenticated, json, unauthorized } from '#lib/server/auth';
 import { consoleBridgeRequest, type ServerEnvironment } from '#lib/server/bridge';
-import {
-	commitStructure,
-	MAX_STRUCTURE_BYTES,
-	validateStructureName
-} from '#lib/server/structures';
+import { MAX_STRUCTURE_BYTES, validateStructureName } from '#lib/server/structures';
+import { storeStructureBytes } from '#lib/server/structure-library';
 import { resolveEnvironment } from '#lib/server/environment';
 
 function decode(value: unknown) {
@@ -31,7 +28,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({ source: body.source })
 		})) as { source?: string; content?: string };
-		const result = await commitStructure(
+		const result = await storeStructureBytes(
 			target,
 			decode(exported.content),
 			`exportada desde ${environment}: ${exported.source ?? body.source}`
@@ -42,7 +39,8 @@ export const POST: RequestHandler = async ({ request }) => {
 				environment,
 				source: exported.source,
 				...result,
-				deployment: 'El commit quedó en GitHub. Staging se desplegará mediante el flujo existente.'
+				deployment:
+					'La estructura quedó guardada de forma privada en R2. Todavía no altera ningún mundo.'
 			},
 			201
 		);
