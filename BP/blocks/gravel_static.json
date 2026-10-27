@@ -1,0 +1,12 @@
+{
+  "format_version": "1.21.80",
+  "minecraft:block": {
+    "description": { "identifier": "spb:gravel_fixed" },
+    "components": {
+      "minecraft:geometry": "minecraft:geometry.full_block",
+      "minecraft:destructible_by_mining": { "seconds_to_destroy": 0.6 },
+      "minecraft:destructible_by_explosion": { "explosion_resistance": 0.6 },
+      "minecraft:material_instances": { "*": { "texture": "gravel", "render_method": "opaque" } }
+    }
+  }
+}

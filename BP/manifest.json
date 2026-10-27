@@ -8,21 +8,21 @@
     }
   },
   "header": {
-    "name": "BP 1.0.50",
+    "name": "BP 1.0.51",
     "description": "NEW SPB ADDONN",
     "min_engine_version": [1, 21, 80],
     "uuid": "499bdb1a-fabe-4234-8eea-b08f9c74f751",
-    "version": [1, 0, 50]
+    "version": [1, 0, 51]
   },
   "modules": [
     {
       "type": "data",
       "uuid": "c95def68-0675-4e92-9213-431cd8475ec5",
-      "version": [1, 0, 50]
+      "version": [1, 0, 51]
     },
     {
       "uuid": "14966dd0-7471-447d-92e8-4cba25a483bf",
-      "version": [1, 0, 50],
+      "version": [1, 0, 51],
       "type": "script",
       "language": "javascript",
       "entry": "scripts/main.js"
@@ -31,7 +31,7 @@
   "dependencies": [
     {
       "uuid": "fcf0b286-097c-4888-bab9-443f550932ac",
-      "version": [1, 0, 34]
+      "version": [1, 0, 35]
     },
     {
       "module_name": "@minecraft/server",
