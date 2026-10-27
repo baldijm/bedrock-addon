@@ -46,6 +46,8 @@
 	let loading = $state(true);
 	let exporting = $state(false);
 	let importing = $state(false);
+	let activating = $state(false);
+	let activationNeeded = $state(false);
 	let savingUploadLimit = $state(false);
 	let uploadLimitMiB = $state(20);
 	let savedUploadLimitMiB = $state(20);
@@ -168,6 +170,7 @@
 			};
 			if (!response.ok) throw new Error(body.error ?? 'No se pudo importar.');
 			toast.success(`Archivo ${body.name} publicado`, { description: body.deployment });
+			activationNeeded = true;
 			fileInput.value = '';
 			selectedFiles = new DataTransfer().files;
 			await load();
@@ -177,6 +180,26 @@
 			});
 		} finally {
 			importing = false;
+		}
+	}
+
+	async function activateStagingStructures() {
+		if (activating) return;
+		activating = true;
+		try {
+			const response = await fetch('/api/structures/activate', { method: 'POST' });
+			const body = (await response.json().catch(() => ({}))) as { error?: string; structures?: number };
+			if (!response.ok) throw new Error(body.error ?? 'No se pudo activar la biblioteca.');
+			activationNeeded = false;
+			toast.success('Activación de Staging iniciada', {
+				description: `${body.structures ?? 0} estructura(s) se sincronizaron. Staging se reiniciará brevemente para leerlas.`
+			});
+		} catch (reason) {
+			toast.error('No se pudieron activar las estructuras', {
+				description: reason instanceof Error ? reason.message : undefined
+			});
+		} finally {
+			activating = false;
 		}
 	}
 
@@ -422,6 +445,16 @@
 				></Card.Root
 			>
 		</section>
+		{#if environment === 'staging' && activationNeeded}<Alert.Root>
+			<PackagePlus />
+			<Alert.Title>Activa las estructuras en Staging</Alert.Title>
+			<Alert.Description class="flex flex-wrap items-center justify-between gap-3">
+				<span>Bedrock sólo descubre archivos nuevos del behavior pack al arrancar. Esto sincroniza la biblioteca R2 y reinicia únicamente Staging.</span>
+				<Button size="sm" variant="outline" onclick={() => void activateStagingStructures()} disabled={activating}>
+					{#if activating}<LoaderCircle class="animate-spin" /> Activando…{:else}<PackagePlus /> Activar en Staging{/if}
+				</Button>
+			</Alert.Description>
+		</Alert.Root>{/if}
 		<Card.Root
 			><Card.Header
 				><Card.Title>Biblioteca versionada</Card.Title><Card.Description
