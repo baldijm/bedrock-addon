@@ -381,6 +381,11 @@ class BedrockConsoleBridge:
                 continue
             cursor = lines[-1]["id"]
             received.extend(lines)
+            if command.startswith("structure load "):
+                for line in lines:
+                    text = str(line["text"])
+                    if "can't be found" in text or "Can't load a structure" in text:
+                        raise RuntimeError(text)
             if any(expected.search(str(line["text"])) for line in lines):
                 return received
 
@@ -473,7 +478,9 @@ class BedrockConsoleBridge:
         world = self.root / "worlds" / world_name
         if world.is_symlink() or not world.is_dir() or not (world / "db").is_dir():
             raise RuntimeError("No se encontró el mundo activo para importar la estructura.")
-        structures = world / "structures"
+        # BDS loads external .mcstructure templates from an active behavior pack,
+        # not from an arbitrary directory beside the world's LevelDB database.
+        structures = self.root / "behavior_packs" / "SPB_BP" / "structures"
         if structures.exists() and structures.is_symlink():
             raise RuntimeError("La carpeta de estructuras no es válida.")
         target_directory = structures / namespace
@@ -493,8 +500,8 @@ class BedrockConsoleBridge:
                         raise ValueError("La carga de la estructura quedó incompleta.")
                     output.write(chunk)
                     written += len(chunk)
-                if stream.read(1):
-                    raise ValueError("La carga de la estructura excede el tamaño declarado.")
+                # HTTP Content-Length delimits this body. Reading one more byte
+                # waits for another request (or connection close) on keep-alive.
                 output.flush()
                 os.fsync(output.fileno())
             os.chmod(temporary, 0o640)
@@ -517,7 +524,7 @@ class BedrockConsoleBridge:
         world_name = properties.get("level-name", "")
         if not world_name or world_name in {".", ".."} or "/" in world_name or "\\" in world_name:
             raise RuntimeError("El nombre del mundo activo no es válido.")
-        directory = self.root / "worlds" / world_name / "structures" / namespace
+        directory = self.root / "behavior_packs" / "SPB_BP" / "structures" / namespace
         target = (directory / f"{name}.mcstructure").resolve()
         if target.parent != directory.resolve() or target.is_symlink() or not target.is_file():
             return {"ok": False, "structure": identifier}

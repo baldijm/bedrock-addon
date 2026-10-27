@@ -61,15 +61,18 @@ class StructurePlacementTests(unittest.TestCase):
 
 
 class StructureImportTests(unittest.TestCase):
-    def test_writes_to_the_active_world_structure_directory(self):
+    def test_writes_to_the_active_behavior_pack_without_reading_past_content_length(self):
         with TemporaryDirectory() as directory:
             root = Path(directory)
             world = root / "worlds" / "Forever World"
             (world / "db").mkdir(parents=True)
             (root / "server.properties").write_text("level-name=Forever World\n", encoding="utf-8")
             bridge = BedrockConsoleBridge(root, OutputBuffer(), root / "unused.pid")
-            result = bridge.import_structure("spb:plaza", __import__("io").BytesIO(b"abc"), 3)
-            target = world / "structures" / "spb" / "plaza.mcstructure"
+            stream = Mock()
+            stream.read.side_effect = [b"abc", AssertionError("Read past Content-Length")]
+            result = bridge.import_structure("spb:plaza", stream, 3)
+            stream.read.assert_called_once_with(3)
+            target = root / "behavior_packs" / "SPB_BP" / "structures" / "spb" / "plaza.mcstructure"
             self.assertEqual(target.read_bytes(), b"abc")
             self.assertEqual(result["structure"], "spb:plaza")
 
@@ -77,7 +80,7 @@ class StructureImportTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             root = Path(directory)
             world = root / "worlds" / "Forever World"
-            target = world / "structures" / "spb" / "plaza.mcstructure"
+            target = root / "behavior_packs" / "SPB_BP" / "structures" / "spb" / "plaza.mcstructure"
             target.parent.mkdir(parents=True)
             (world / "db").mkdir(parents=True)
             target.write_bytes(b"previous")
@@ -91,7 +94,7 @@ class StructureImportTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             root = Path(directory)
             world = root / "worlds" / "Forever World"
-            target = world / "structures" / "spb" / "plaza.mcstructure"
+            target = root / "behavior_packs" / "SPB_BP" / "structures" / "spb" / "plaza.mcstructure"
             target.parent.mkdir(parents=True)
             (world / "db").mkdir(parents=True)
             target.write_bytes(b"abc")
