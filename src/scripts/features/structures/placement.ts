@@ -19,6 +19,7 @@ type PlacementRequest = {
   maxZ: number;
   rotation: keyof typeof ROTATIONS;
   mirror: keyof typeof MIRRORS;
+  mode: keyof typeof PLACEMENT_MODES;
 };
 
 const ROTATIONS = {
@@ -33,6 +34,13 @@ const MIRRORS = {
   x: StructureMirrorAxis.X,
   z: StructureMirrorAxis.Z,
   xz: StructureMirrorAxis.XZ
+} as const;
+
+// A layered placement goes from the base upwards. This means a gravity block
+// gets its support before Bedrock places that block's own layer.
+const PLACEMENT_MODES = {
+  instant: { animationMode: StructureAnimationMode.None, animationSeconds: 0 },
+  layers: { animationMode: StructureAnimationMode.Layers, animationSeconds: 12 }
 } as const;
 
 const IDENTIFIER = /^[a-z0-9][a-z0-9_.-]{0,31}:[a-z0-9][a-z0-9_./-]{0,95}$/;
@@ -67,6 +75,9 @@ function parseRequest(message: string): PlacementRequest {
   if (typeof input.mirror !== 'string' || !(input.mirror in MIRRORS)) {
     throw new Error('el espejo no es válido');
   }
+  if (typeof input.mode !== 'string' || !(input.mode in PLACEMENT_MODES)) {
+    throw new Error('el modo de colocación no es válido');
+  }
 
   const parsed: PlacementRequest = {
     request: input.request,
@@ -79,7 +90,8 @@ function parseRequest(message: string): PlacementRequest {
     minZ: integer(input.minZ, 'Z mínima'),
     maxZ: integer(input.maxZ, 'Z máxima'),
     rotation: input.rotation as PlacementRequest['rotation'],
-    mirror: input.mirror as PlacementRequest['mirror']
+    mirror: input.mirror as PlacementRequest['mirror'],
+    mode: input.mode as PlacementRequest['mode']
   };
   if (parsed.minX > parsed.maxX || parsed.minZ > parsed.maxZ) {
     throw new Error('la huella de la estructura no es válida');
@@ -112,12 +124,16 @@ async function placeAfterLoading(message: string): Promise<void> {
     }
 
     await world.tickingAreaManager.createTickingArea(areaId, options);
+    const placement = PLACEMENT_MODES[request.mode];
     world.structureManager.place(
       request.structure,
       dimension,
       { x: request.x, y: request.y, z: request.z },
       {
-        animationMode: StructureAnimationMode.None,
+        animationMode: placement.animationMode,
+        ...(placement.animationSeconds > 0
+          ? { animationSeconds: placement.animationSeconds }
+          : {}),
         includeBlocks: true,
         includeEntities: true,
         integrity: 1,
@@ -125,6 +141,11 @@ async function placeAfterLoading(message: string): Promise<void> {
         rotation: ROTATIONS[request.rotation]
       }
     );
+    if (placement.animationSeconds > 0) {
+      // `place` schedules an animation. Keep the area ticking and do not
+      // report completion until Bedrock has had time to finish it.
+      await system.waitTicks(placement.animationSeconds * 20 + 2);
+    }
     marker(request.request, 'OK');
   } catch (error: unknown) {
     marker(requestId, 'ERROR', error instanceof Error ? error.message : String(error));

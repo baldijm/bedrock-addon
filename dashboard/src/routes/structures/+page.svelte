@@ -46,6 +46,7 @@
 	let z = $state('');
 	let rotation = $state('0_degrees');
 	let mirror = $state('none');
+	let placementMode = $state<'instant' | 'layers'>('instant');
 	let anchor = $state<StructureAnchor>('center');
 	let confirmation = $state('');
 	let fileInput: HTMLInputElement;
@@ -239,6 +240,7 @@
 					z: Number(z),
 					rotation,
 					mirror,
+					mode: placementMode,
 					anchor,
 					confirmation
 				})
@@ -494,6 +496,23 @@
 							>Eje Z</option
 						><option value="xz">X y Z</option></select
 					>
+				</div>
+				<div class="grid gap-2 md:col-span-3">
+					<Label for="placement-mode">Forma de colocación</Label><select
+						id="placement-mode"
+						class="h-9 rounded-md border bg-background px-3 text-sm"
+						bind:value={placementMode}
+						><option value="instant">Instantánea</option><option value="layers"
+							>Capa por capa (12 segundos)</option
+						></select
+					>
+					{#if placementMode === 'layers'}<p class="text-sm text-muted-foreground"
+						>Bedrock construye desde la base hacia arriba; es la opción indicada para arena,
+						grava u otros bloques afectados por gravedad.</p
+					>{:else}<p class="text-sm text-muted-foreground"
+						>Bedrock coloca todos los bloques inmediatamente. En estructuras grandes el cliente puede
+						tardar un momento adicional en dibujar los chunks.</p
+					>{/if}
 				</div>
 				<div class="grid gap-2 md:col-span-3">
 					<Label for="confirm"

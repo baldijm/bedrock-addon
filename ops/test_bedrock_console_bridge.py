@@ -44,6 +44,7 @@ class StructurePlacementTests(unittest.TestCase):
                     "z": 20,
                     "rotation": "0_degrees",
                     "mirror": "none",
+                    "mode": "instant",
                     "dimensions": {"x": 153, "y": 144, "z": 71},
                 }
             )
@@ -65,6 +66,7 @@ class StructurePlacementTests(unittest.TestCase):
                 "maxZ": 90,
                 "rotation": "0_degrees",
                 "mirror": "none",
+                "mode": "instant",
             },
         )
         self.assertEqual(result["area"], {"from": {"x": 10, "z": 20}, "to": {"x": 162, "z": 90}})

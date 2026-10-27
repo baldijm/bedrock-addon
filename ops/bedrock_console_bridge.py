@@ -589,10 +589,13 @@ class BedrockConsoleBridge:
             raise ValueError("Las dimensiones verificadas no son seguras.")
         rotation = request.get("rotation", "0_degrees")
         mirror = request.get("mirror", "none")
+        mode = request.get("mode", "instant")
         if rotation not in {"0_degrees", "90_degrees", "180_degrees", "270_degrees"}:
             raise ValueError("La rotación no es válida.")
         if mirror not in {"none", "x", "z", "xz"}:
             raise ValueError("El espejo no es válido.")
+        if mode not in {"instant", "layers"}:
+            raise ValueError("El modo de colocación no es válido.")
 
         corners = [(0, 0), (width - 1, 0), (0, depth - 1), (width - 1, depth - 1)]
         transformed: list[tuple[int, int]] = []
@@ -626,6 +629,7 @@ class BedrockConsoleBridge:
                 "maxZ": max_z,
                 "rotation": rotation,
                 "mirror": mirror,
+                "mode": mode,
             },
             separators=(",", ":"),
         )

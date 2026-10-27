@@ -18,6 +18,7 @@ import {
 const ROTATIONS = new Set(['0_degrees', '90_degrees', '180_degrees', '270_degrees']);
 const MIRRORS = new Set(['none', 'x', 'z', 'xz']);
 const ANCHORS = new Set(['center', 'origin']);
+const PLACEMENT_MODES = new Set(['instant', 'layers']);
 
 function coordinate(value: unknown, axis: string) {
 	if (
@@ -44,6 +45,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			ROTATIONS.has(body.rotation) ? body.rotation : '0_degrees'
 		) as StructureRotation;
 		const mirror = (MIRRORS.has(body.mirror) ? body.mirror : 'none') as StructureMirror;
+		const mode = PLACEMENT_MODES.has(body.mode) ? body.mode : 'instant';
 		const anchor = (ANCHORS.has(body.anchor) ? body.anchor : 'center') as StructureAnchor;
 		const anchorLabel = anchor === 'center' ? 'centro' : 'origen';
 		const expected = `spb:${name} (${anchorLabel}) @ ${x} ${y} ${z}`;
@@ -100,6 +102,7 @@ export const POST: RequestHandler = async ({ request }) => {
 					z: origin.z,
 					rotation,
 					mirror,
+					mode,
 					dimensions: structure.dimensions
 				})
 			});
@@ -111,6 +114,11 @@ export const POST: RequestHandler = async ({ request }) => {
 				error.message !== 'No existe esa ruta.'
 			)
 				throw error;
+			if (mode !== 'instant') {
+				throw new Error(
+					'La colocación capa por capa estará disponible en producción después de su mantenimiento autorizado.'
+				);
+			}
 			confirmed = false;
 			result = await consoleBridgeRequest(environment, '/commands', {
 				method: 'POST',
@@ -125,6 +133,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			environment,
 			confirmed,
 			anchor,
+			mode,
 			requested: { x, y, z },
 			origin,
 			command: `structure load spb:${name} ${origin.x} ${origin.y} ${origin.z}`,
