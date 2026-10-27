@@ -40,6 +40,7 @@
 		anchor: StructureAnchor;
 		origin: { x: number; y: number; z: number };
 	};
+	type StaticCandidate = { id: string; replacement: string; label: string };
 
 	let structures = $state<Structure[]>([]);
 	let error = $state('');
@@ -48,6 +49,12 @@
 	let importing = $state(false);
 	let activating = $state(false);
 	let activationNeeded = $state(false);
+	let staticSource = $state('');
+	let staticTarget = $state('');
+	let staticCandidates = $state<StaticCandidate[]>([]);
+	let staticBlocks = $state<string[]>([]);
+	let analyzingStatic = $state(false);
+	let creatingStatic = $state(false);
 	let savingUploadLimit = $state(false);
 	let uploadLimitMiB = $state(20);
 	let savedUploadLimitMiB = $state(20);
@@ -200,6 +207,68 @@
 			});
 		} finally {
 			activating = false;
+		}
+	}
+
+	async function analyzeStaticVariant() {
+		if (!staticSource || analyzingStatic) return;
+		analyzingStatic = true;
+		try {
+			const response = await fetch(
+				`/api/structures/static-variant?source=${encodeURIComponent(staticSource)}`
+			);
+			const body = (await response.json().catch(() => ({}))) as {
+				error?: string;
+				candidates?: StaticCandidate[];
+			};
+			if (!response.ok) throw new Error(body.error ?? 'No se pudo analizar la estructura.');
+			staticCandidates = body.candidates ?? [];
+			staticBlocks = staticCandidates.map((candidate) => candidate.id);
+			if (!staticTarget) staticTarget = `${staticSource}-static`;
+			if (!staticCandidates.length)
+				toast.message('No se detectaron bloques con gravedad que tengan una variante estática.');
+		} catch (reason) {
+			toast.error('No se pudo analizar la estructura', {
+				description: reason instanceof Error ? reason.message : undefined
+			});
+		} finally {
+			analyzingStatic = false;
+		}
+	}
+
+	function toggleStaticBlock(id: string, checked: boolean) {
+		staticBlocks = checked
+			? [...new Set([...staticBlocks, id])]
+			: staticBlocks.filter((current) => current !== id);
+	}
+
+	async function createStaticVariant() {
+		if (creatingStatic || !staticSource || !staticTarget || !staticBlocks.length) return;
+		creatingStatic = true;
+		try {
+			const response = await fetch('/api/structures/static-variant', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ source: staticSource, target: staticTarget, blocks: staticBlocks })
+			});
+			const body = (await response.json().catch(() => ({}))) as {
+				error?: string;
+				name?: string;
+				replacements?: number;
+			};
+			if (!response.ok) throw new Error(body.error ?? 'No se pudo crear la variante.');
+			toast.success(`Variante ${body.name} creada`, {
+				description: `${body.replacements ?? 0} referencias se cambiaron. El original sigue intacto.`
+			});
+			selected = body.name ?? selected;
+			activationNeeded = true;
+			await load();
+		} catch (reason) {
+			toast.error('No se pudo crear la variante estática', {
+				description: reason instanceof Error ? reason.message : undefined
+			});
+		} finally {
+			creatingStatic = false;
 		}
 	}
 
@@ -455,6 +524,62 @@
 				</Button>
 			</Alert.Description>
 		</Alert.Root>{/if}
+		{#if environment === 'staging'}<Card.Root class="border-amber-500/30"
+			><Card.Header
+				><Card.Title>Crear variante sin gravedad</Card.Title><Card.Description
+					>Analiza una estructura de la biblioteca y crea una copia. Los bloques que selecciones se
+					reemplazan por sus equivalentes SPB estáticos; el archivo original nunca se modifica.</Card.Description
+				></Card.Header
+			><Card.Content class="grid gap-4"
+				><div class="grid gap-2">
+					<Label for="static-source">Estructura original</Label><select
+						id="static-source"
+						class="h-9 rounded-md border bg-background px-3 text-sm"
+						bind:value={staticSource}
+						onchange={() => {
+							staticCandidates = [];
+							staticBlocks = [];
+							staticTarget = staticSource ? `${staticSource}-static` : '';
+						}}
+						><option value="">Selecciona una estructura</option>{#each structures as structure}<option
+							value={structure.name}>spb:{structure.name}</option
+						>{/each}</select
+					>
+				</div>
+				<div class="flex flex-wrap gap-2">
+					<Button variant="outline" onclick={() => void analyzeStaticVariant()} disabled={!staticSource || analyzingStatic}
+						>{#if analyzingStatic}<LoaderCircle class="animate-spin" /> Analizando…{:else}Analizar bloques con gravedad{/if}</Button
+					>
+				</div>
+				{#if staticCandidates.length}<div class="grid gap-3 rounded-md border p-4">
+					<div class="grid gap-2">
+						<Label for="static-target">Nombre de la variante</Label><Input
+							id="static-target"
+							bind:value={staticTarget}
+							placeholder="finn-static"
+						/>
+					</div>
+					<p class="text-sm text-muted-foreground">
+						Selecciona los bloques que deben permanecer fijos en la copia.
+					</p>
+					<div class="grid gap-2 sm:grid-cols-2">
+						{#each staticCandidates as candidate}<label class="flex cursor-pointer items-start gap-3 rounded-md border p-3 text-sm">
+							<input
+								type="checkbox"
+								checked={staticBlocks.includes(candidate.id)}
+								onchange={(event) =>
+									toggleStaticBlock(candidate.id, (event.currentTarget as HTMLInputElement).checked)}
+							/>
+							<span><strong>{candidate.label}</strong><br /><code class="text-xs text-muted-foreground"
+								>{candidate.id} → {candidate.replacement}</code
+							></span>
+						</label>{/each}
+					</div>
+					<Button onclick={() => void createStaticVariant()} disabled={creatingStatic || !staticTarget.trim() || !staticBlocks.length}
+						>{#if creatingStatic}<LoaderCircle class="animate-spin" /> Creando copia…{:else}<PackagePlus /> Crear variante estática{/if}</Button
+					>
+				</div>{/if}</Card.Content
+		></Card.Root>{/if}
 		<Card.Root
 			><Card.Header
 				><Card.Title>Biblioteca versionada</Card.Title><Card.Description
