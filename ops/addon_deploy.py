@@ -110,6 +110,43 @@ def remove_directory(path):
     shutil.rmtree(path)
 
 
+def preserve_runtime_structures(previous, current):
+    """Carry R2-materialized structures across an immutable pack replacement.
+
+    The behavior pack itself is replaced from GitHub, but Bedrock can only load
+    imported structures from that active pack.  Runtime files that are not in
+    GitHub therefore need to be copied forward, and the bridge user must retain
+    write access to the library for later R2 materializations.
+    """
+    if current.exists():
+        require_real_directory(current, "La biblioteca nueva de estructuras")
+    else:
+        current.mkdir(mode=0o750, parents=True)
+    if previous.exists():
+        require_real_directory(previous, "La biblioteca anterior de estructuras")
+        for path in previous.rglob("*"):
+            if path.is_symlink():
+                raise RuntimeError(f"La biblioteca anterior contiene un enlace simbólico: {path}")
+        for source in previous.rglob("*.mcstructure"):
+            if not source.is_file():
+                raise RuntimeError(f"La estructura anterior no es segura: {source}")
+            relative = source.relative_to(previous)
+            target = current / relative
+            target.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
+            if target.parent.is_symlink() or target.is_symlink():
+                raise RuntimeError(f"La estructura de destino no es segura: {target}")
+            if target.exists() and not target.is_file():
+                raise RuntimeError(f"La estructura de destino no es un archivo: {target}")
+            if not target.exists():
+                shutil.copy2(source, target)
+
+    for directory in (current, *(path for path in current.rglob("*") if path.is_dir())):
+        if directory.is_symlink():
+            raise RuntimeError(f"La carpeta de estructuras no es segura: {directory}")
+        shutil.chown(directory, user="bedrock", group="bedrock")
+        os.chmod(directory, 0o750)
+
+
 def copy_packages(source, root, environment):
     """Cambia los paquetes y conserva sus referencias en el mundo activo."""
     targets = deployment_paths(root)
@@ -125,6 +162,10 @@ def copy_packages(source, root, environment):
         for relative, destination in PACKS:
             target = root / destination
             shutil.copytree(source / relative, target, copy_function=shutil.copy2)
+        preserve_runtime_structures(
+            rollback / "SPB_BP" / "structures",
+            root / "behavior_packs" / "SPB_BP" / "structures",
+        )
         ensure_active_world_pack_references(source, root)
     except BaseException:
         for _, destination in PACKS:

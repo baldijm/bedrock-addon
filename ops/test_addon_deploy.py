@@ -22,6 +22,24 @@ class AddonDeployTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "último desplegado"):
                     addon_deploy.production_receipt_matches("b")
 
+    def test_preserves_runtime_structures_and_restores_writable_directories(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            previous = root / "previous"
+            current = root / "current"
+            (previous / "spb").mkdir(parents=True)
+            (current / "spb").mkdir(parents=True)
+            (previous / "spb/finn.mcstructure").write_bytes(b"r2")
+            (current / "spb/angel.mcstructure").write_bytes(b"git")
+
+            with patch.object(addon_deploy.shutil, "chown") as chown:
+                addon_deploy.preserve_runtime_structures(previous, current)
+
+            self.assertEqual((current / "spb/finn.mcstructure").read_bytes(), b"r2")
+            self.assertEqual((current / "spb/angel.mcstructure").read_bytes(), b"git")
+            self.assertEqual((current / "spb").stat().st_mode & 0o777, 0o750)
+            self.assertTrue(chown.called)
+
 
 if __name__ == "__main__":
     unittest.main()
