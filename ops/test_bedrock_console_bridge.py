@@ -87,6 +87,19 @@ class StructureImportTests(unittest.TestCase):
                 bridge.import_structure("spb:plaza", __import__("io").BytesIO(b"short"), 6)
             self.assertEqual(target.read_bytes(), b"previous")
 
+    def test_confirms_only_the_expected_materialized_file(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            world = root / "worlds" / "Forever World"
+            target = world / "structures" / "spb" / "plaza.mcstructure"
+            target.parent.mkdir(parents=True)
+            (world / "db").mkdir(parents=True)
+            target.write_bytes(b"abc")
+            (root / "server.properties").write_text("level-name=Forever World\n", encoding="utf-8")
+            bridge = BedrockConsoleBridge(root, OutputBuffer(), root / "unused.pid")
+            self.assertTrue(bridge.materialized_structure("spb:plaza", 3)["ok"])
+            self.assertFalse(bridge.materialized_structure("spb:plaza", 4)["ok"])
+
 
 class OutputBufferTests(unittest.TestCase):
     def test_returns_only_newer_output(self):

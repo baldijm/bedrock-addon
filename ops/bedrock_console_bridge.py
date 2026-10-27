@@ -503,6 +503,30 @@ class BedrockConsoleBridge:
             temporary.unlink(missing_ok=True)
         return {"ok": True, "structure": identifier, "size": written}
 
+    def materialized_structure(self, structure_id: object, expected_size: object) -> dict[str, str | int | bool]:
+        """Confirm the exact local artifact after a streamed R2 upload.
+
+        A tunnel can occasionally lose the response after the atomic replace has
+        completed.  This read-only acknowledgement lets the Worker distinguish
+        that completed write from a failed or partial upload.
+        """
+        identifier, namespace, name = validate_structure_id(structure_id)
+        if not isinstance(expected_size, int) or isinstance(expected_size, bool) or expected_size < 1:
+            raise ValueError("El tamaño esperado no es válido.")
+        properties = parse_server_properties(self.root / SERVER_PROPERTIES_FILE)
+        world_name = properties.get("level-name", "")
+        if not world_name or world_name in {".", ".."} or "/" in world_name or "\\" in world_name:
+            raise RuntimeError("El nombre del mundo activo no es válido.")
+        directory = self.root / "worlds" / world_name / "structures" / namespace
+        target = (directory / f"{name}.mcstructure").resolve()
+        if target.parent != directory.resolve() or target.is_symlink() or not target.is_file():
+            return {"ok": False, "structure": identifier}
+        return {
+            "ok": target.stat().st_size == expected_size,
+            "structure": identifier,
+            "size": target.stat().st_size,
+        }
+
     def place_structure(self, request: object) -> dict[str, Any]:
         """Place a structure only after its complete horizontal footprint is ticking.
 
@@ -769,6 +793,19 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/world/reset/status":
             self._send_json(HTTPStatus.OK, read_world_reset_status())
+            return
+        if parsed.path == "/structures/materialized":
+            query = parse_qs(parsed.query)
+            try:
+                size = int(query.get("size", [""])[0])
+                self._send_json(
+                    HTTPStatus.OK,
+                    self.bridge_server.bridge.materialized_structure(
+                        query.get("structure", [None])[0], size
+                    ),
+                )
+            except (ValueError, RuntimeError) as error:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
             return
         if parsed.path == "/properties/cancel":
             try:

@@ -71,16 +71,24 @@ export const POST: RequestHandler = async ({ request }) => {
 					);
 				const object = await readStoredStructure(name);
 				if (!object) throw new Error('La estructura de R2 ya no está disponible.');
-				await consoleBridgeStreamRequest('staging', '/structures/import', {
-					method: 'POST',
-					headers: {
-						'content-type': 'application/octet-stream',
-						'content-length': String(object.entry.size),
-						'x-spb-structure-id': `spb:${name}`,
-						'x-spb-structure-etag': object.entry.etag
-					},
-					body: object.object.body
-				});
+				try {
+					await consoleBridgeStreamRequest('staging', '/structures/import', {
+						method: 'POST',
+						headers: {
+							'content-type': 'application/octet-stream',
+							'content-length': String(object.entry.size),
+							'x-spb-structure-id': `spb:${name}`,
+							'x-spb-structure-etag': object.entry.etag
+						},
+						body: object.object.body
+					});
+				} catch (uploadError) {
+					const check = (await consoleBridgeRequest(
+						'staging',
+						`/structures/materialized?structure=${encodeURIComponent(`spb:${name}`)}&size=${object.entry.size}`
+					)) as { ok?: boolean };
+					if (!check.ok) throw uploadError;
+				}
 			}
 			result = await consoleBridgeRequest(environment, '/structures/place', {
 				method: 'POST',
