@@ -1,0 +1,2 @@
+# Servicios y scripts que se copian desde Windows a Linux: siempre LF.
+ops/** text eol=lf
