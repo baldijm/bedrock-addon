@@ -6,7 +6,14 @@ const DIRECTORY = 'BP/structures/spb';
 const NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 export const MAX_STRUCTURE_BYTES = 20 * 1024 * 1024;
 
-export type StructureEntry = { name: string; size: number; sha: string; path: string };
+export type StructureDimensions = { x: number; y: number; z: number };
+export type StructureEntry = {
+	name: string;
+	size: number;
+	sha: string;
+	path: string;
+	dimensions: StructureDimensions | null;
+};
 
 class GitHubError extends Error {
 	constructor(
@@ -38,7 +45,7 @@ function branch() {
 
 function headers(extra: HeadersInit = {}) {
 	const result = new Headers(extra);
-	result.set('accept', 'application/vnd.github+json');
+	if (!result.has('accept')) result.set('accept', 'application/vnd.github+json');
 	result.set('x-github-api-version', '2026-03-10');
 	result.set('user-agent', 'SPB-Structures-Dashboard');
 	if (token()) result.set('authorization', `Bearer ${token()}`);
@@ -65,6 +72,91 @@ function base64(bytes: Uint8Array) {
 	for (let offset = 0; offset < bytes.length; offset += 0x8000)
 		result += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
 	return btoa(result);
+}
+
+function requireBytes(bytes: Uint8Array, offset: number, length: number) {
+	if (!Number.isSafeInteger(length) || length < 0 || offset + length > bytes.length)
+		throw new Error('El archivo .mcstructure está incompleto o no tiene un NBT válido.');
+}
+
+function u16(bytes: Uint8Array, offset: number) {
+	requireBytes(bytes, offset, 2);
+	return bytes[offset] | (bytes[offset + 1] << 8);
+}
+
+function i32(bytes: Uint8Array, offset: number) {
+	requireBytes(bytes, offset, 4);
+	return new DataView(bytes.buffer, bytes.byteOffset + offset, 4).getInt32(0, true);
+}
+
+function nameAt(bytes: Uint8Array, offset: number) {
+	const length = u16(bytes, offset);
+	const start = offset + 2;
+	requireBytes(bytes, start, length);
+	return { value: new TextDecoder().decode(bytes.subarray(start, start + length)), next: start + length };
+}
+
+function skipNbtPayload(bytes: Uint8Array, type: number, offset: number): number {
+	if (type === 1) return offset + 1;
+	if (type === 2) return offset + 2;
+	if (type === 3 || type === 5) return offset + 4;
+	if (type === 4 || type === 6) return offset + 8;
+	if (type === 7) return offset + 4 + i32(bytes, offset);
+	if (type === 8) {
+		const value = nameAt(bytes, offset);
+		return value.next;
+	}
+	if (type === 9) {
+		requireBytes(bytes, offset, 5);
+		const childType = bytes[offset];
+		const count = i32(bytes, offset + 1);
+		if (count < 0) throw new Error('El archivo .mcstructure tiene una lista NBT inválida.');
+		let cursor = offset + 5;
+		for (let index = 0; index < count; index += 1) cursor = skipNbtPayload(bytes, childType, cursor);
+		return cursor;
+	}
+	if (type === 10) {
+		let cursor = offset;
+		while (true) {
+			requireBytes(bytes, cursor, 1);
+			const childType = bytes[cursor++];
+			if (childType === 0) return cursor;
+			const child = nameAt(bytes, cursor);
+			cursor = skipNbtPayload(bytes, childType, child.next);
+		}
+	}
+	if (type === 11) return offset + 4 + i32(bytes, offset) * 4;
+	if (type === 12) return offset + 4 + i32(bytes, offset) * 8;
+	throw new Error('El archivo .mcstructure contiene un tipo NBT no compatible.');
+}
+
+/** Read the `size` triplet from Bedrock's little-endian NBT structure header. */
+export function readStructureDimensions(bytes: Uint8Array): StructureDimensions {
+	requireBytes(bytes, 0, 3);
+	if (bytes[0] !== 10) throw new Error('El archivo no es una estructura Bedrock NBT válida.');
+	let cursor = nameAt(bytes, 1).next;
+	while (true) {
+		requireBytes(bytes, cursor, 1);
+		const type = bytes[cursor++];
+		if (type === 0) break;
+		const name = nameAt(bytes, cursor);
+		cursor = name.next;
+		if (name.value === 'size') {
+			requireBytes(bytes, cursor, 5);
+			if (type !== 9 || bytes[cursor] !== 3 || i32(bytes, cursor + 1) !== 3)
+				throw new Error('La estructura no contiene dimensiones válidas.');
+			const dimensions = {
+				x: i32(bytes, cursor + 5),
+				y: i32(bytes, cursor + 9),
+				z: i32(bytes, cursor + 13)
+			};
+			if (Object.values(dimensions).some((value) => value < 1 || value > 2048))
+				throw new Error('Las dimensiones de la estructura no son seguras.');
+			return dimensions;
+		}
+		cursor = skipNbtPayload(bytes, type, cursor);
+	}
+	throw new Error('La estructura no incluye el campo de dimensiones.');
 }
 
 async function github(path: string, options: RequestInit = {}) {
@@ -98,7 +190,7 @@ export async function listStructures(): Promise<StructureEntry[]> {
 		sha?: string;
 		path?: string;
 	}>;
-	return entries
+	const structures = entries
 		.filter(
 			(entry) =>
 				entry.type === 'file' &&
@@ -109,9 +201,20 @@ export async function listStructures(): Promise<StructureEntry[]> {
 			name: entry.name!.slice(0, -'.mcstructure'.length),
 			size: entry.size ?? 0,
 			sha: entry.sha ?? '',
-			path: entry.path ?? ''
+			path: entry.path ?? '',
+			dimensions: null
 		}))
 		.sort((left, right) => left.name.localeCompare(right.name));
+	return Promise.all(
+		structures.map(async (structure) => {
+			try {
+				return { ...structure, dimensions: await readStructureHeader(structure.name) };
+			} catch {
+				// A library entry can still be downloaded even if a third-party file is malformed.
+				return structure;
+			}
+		})
+	);
 }
 
 export async function readStructure(name: unknown) {
@@ -125,11 +228,26 @@ export async function readStructure(name: unknown) {
 	return { name: safeName, bytes: new Uint8Array(await response.arrayBuffer()) };
 }
 
+async function readStructureHeader(name: unknown) {
+	const safeName = validateStructureName(name);
+	const response = await github(
+		`/contents/${DIRECTORY}/${encodeURIComponent(safeName)}.mcstructure?ref=${encodeURIComponent(branch())}`,
+		{ headers: { accept: 'application/vnd.github.raw', range: 'bytes=0-63' } }
+	);
+	return readStructureDimensions(new Uint8Array(await response.arrayBuffer()));
+}
+
+export async function describeStructure(name: unknown) {
+	const safeName = validateStructureName(name);
+	return { name: safeName, dimensions: await readStructureHeader(safeName) };
+}
+
 export async function commitStructure(name: unknown, bytes: Uint8Array, source: string) {
 	const safeName = validateStructureName(name);
 	requireToken();
 	if (!bytes.byteLength || bytes.byteLength > MAX_STRUCTURE_BYTES)
 		throw new Error('La estructura debe medir entre 1 byte y 20 MiB.');
+	const dimensions = readStructureDimensions(bytes);
 	const path = `${DIRECTORY}/${safeName}.mcstructure`;
 	let sha: string | undefined;
 	try {
@@ -152,6 +270,7 @@ export async function commitStructure(name: unknown, bytes: Uint8Array, source: 
 	return {
 		name: safeName,
 		size: bytes.byteLength,
+		dimensions,
 		commit: result.commit?.sha ?? '',
 		url: result.commit?.html_url ?? ''
 	};

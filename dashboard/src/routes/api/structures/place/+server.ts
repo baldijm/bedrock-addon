@@ -1,7 +1,7 @@
 import type { RequestHandler } from './$types';
 import { isAuthenticated, json, unauthorized } from '#lib/server/auth';
 import { consoleBridgeRequest, type ServerEnvironment } from '#lib/server/bridge';
-import { validateStructureName } from '#lib/server/structures';
+import { describeStructure, validateStructureName } from '#lib/server/structures';
 import { resolveEnvironment } from '#lib/server/environment';
 
 const ROTATIONS = new Set(['0_degrees', '90_degrees', '180_degrees', '270_degrees']);
@@ -33,16 +33,45 @@ export const POST: RequestHandler = async ({ request }) => {
 		const expected = `spb:${name} @ ${x} ${y} ${z}`;
 		if (body.confirmation !== expected)
 			throw new Error(`Escribe exactamente ${expected} para confirmar.`);
-		const result = await consoleBridgeRequest(environment, '/commands', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({
-				command: `structure load spb:${name} ${x} ${y} ${z} ${rotation} ${mirror} true true`
-			})
-		});
+		const structure = await describeStructure(name);
+		let result: unknown;
+		let confirmed = true;
+		try {
+			result = await consoleBridgeRequest(environment, '/structures/place', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					structure: `spb:${name}`,
+					x,
+					y,
+					z,
+					rotation,
+					mirror,
+					dimensions: structure.dimensions
+				})
+			});
+		} catch (error) {
+			// Production remains usable while its bridge awaits an explicitly authorized maintenance deployment.
+			if (environment !== 'production' || !(error instanceof Error) || error.message !== 'No existe esa ruta.')
+				throw error;
+			confirmed = false;
+			result = await consoleBridgeRequest(environment, '/commands', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					command: `structure load spb:${name} ${x} ${y} ${z} ${rotation} ${mirror} true true`
+				})
+			});
+		}
 		return json(
-			{ ok: true, environment, command: `structure load spb:${name} ${x} ${y} ${z}`, result },
-			202
+			{
+				ok: true,
+				environment,
+				confirmed,
+				command: `structure load spb:${name} ${x} ${y} ${z}`,
+				dimensions: structure.dimensions,
+				result
+			}
 		);
 	} catch (error) {
 		return json(

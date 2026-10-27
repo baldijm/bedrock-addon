@@ -25,10 +25,39 @@ class StructureIdentifierTests(unittest.TestCase):
     def test_accepts_a_valid_bedrock_identifier(self):
         self.assertEqual(validate_structure_id("mystructure:casa_principal"), ("mystructure:casa_principal", "mystructure", "casa_principal"))
 
-    def test_rejects_paths_and_uppercase_identifiers(self):
-        for value in ("mystructure:../secreto", "mystructure:/secreto", "MyStructure:casa", None):
+    def test_rejects_paths_and_malformed_identifiers(self):
+        for value in ("mystructure:../secreto", "mystructure:/secreto", "my structure:casa", None):
             with self.assertRaises(ValueError):
                 validate_structure_id(value)
+
+
+class StructurePlacementTests(unittest.TestCase):
+    def test_preloads_the_complete_footprint_then_removes_the_temporary_area(self):
+        bridge = BedrockConsoleBridge(Path("."), OutputBuffer(), Path("unused.pid"))
+        bridge._command_until = Mock(return_value=[])
+        with patch.object(bridge_module.uuid, "uuid4", return_value=Mock(hex="0123456789abcdef")):
+            result = bridge.place_structure(
+                {
+                    "structure": "spb:angel",
+                    "x": 10,
+                    "y": 80,
+                    "z": 20,
+                    "rotation": "0_degrees",
+                    "mirror": "none",
+                    "dimensions": {"x": 153, "y": 144, "z": 71},
+                }
+            )
+
+        commands = [call.args[0] for call in bridge._command_until.call_args_list]
+        self.assertEqual(commands[0], "tickingarea add 10 0 20 162 0 90 spb_place_0123456789ab true")
+        self.assertEqual(commands[1], "structure load spb:angel 10 80 20 0_degrees none true true")
+        self.assertEqual(commands[2], "tickingarea remove spb_place_0123456789ab")
+        self.assertEqual(result["area"], {"from": {"x": 10, "z": 20}, "to": {"x": 162, "z": 90}})
+
+    def test_rejects_unverified_or_unsafe_dimensions(self):
+        bridge = BedrockConsoleBridge(Path("."), OutputBuffer(), Path("unused.pid"))
+        with self.assertRaises(ValueError):
+            bridge.place_structure({"structure": "spb:angel", "x": 0, "y": 80, "z": 0})
 
 
 class OutputBufferTests(unittest.TestCase):

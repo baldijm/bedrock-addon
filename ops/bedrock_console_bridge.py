@@ -34,9 +34,9 @@ MAX_COMMAND_LENGTH = 512
 MAX_BODY_BYTES = 16 * 1024
 MAX_LOG_LINES = 500
 PLAYER_LIST_TIMEOUT_SECONDS = 2
-STRUCTURE_COMMAND_TIMEOUT_SECONDS = 5
+STRUCTURE_COMMAND_TIMEOUT_SECONDS = 45
 STRUCTURE_EXTRACT_TIMEOUT_SECONDS = 90
-MAX_STRUCTURE_BYTES = 8 * 1024 * 1024
+MAX_STRUCTURE_BYTES = 20 * 1024 * 1024
 STRUCTURE_EXPORT_DIRECTORY = Path("/var/lib/spb/structure-exports")
 SERVER_PROPERTIES_FILE = "server.properties"
 WORLD_RESET_REQUESTS = Path("/var/lib/spb/staging-world-reset/requests")
@@ -67,6 +67,9 @@ GAMERULE_PATTERNS = {
 STRUCTURE_ID_PATTERN = re.compile(
     r"^(?P<namespace>[a-z0-9][a-z0-9_.-]{0,31}):(?P<name>[a-z0-9][a-z0-9_./-]{0,95})$"
 )
+STRUCTURE_LOADED_PATTERN = re.compile(r"Loaded a structure of name\s+(?P<identifier>[^\s]+)", re.IGNORECASE)
+TICKING_AREA_ADDED_PATTERN = re.compile(r"Added ticking area", re.IGNORECASE)
+TICKING_AREA_REMOVED_PATTERN = re.compile(r"Removed ticking area", re.IGNORECASE)
 
 
 def validate_command(value: object) -> str:
@@ -449,9 +452,86 @@ class BedrockConsoleBridge:
                     raise RuntimeError("No se encontró una estructura guardada en disco con ese nombre.")
                 size = result.stat().st_size
                 if not 1 <= size <= MAX_STRUCTURE_BYTES:
-                    raise RuntimeError("La estructura excede el límite seguro de 8 MiB.")
+                    raise RuntimeError("La estructura excede el límite seguro de 20 MiB.")
                 encoded = base64.b64encode(result.read_bytes()).decode("ascii")
                 return {"source": identifier, "size": size, "content": encoded}
+
+    def place_structure(self, request: object) -> dict[str, Any]:
+        """Place a structure only after its complete horizontal footprint is ticking.
+
+        Bedrock queues `structure load` when even one required chunk is absent.  A
+        preloaded, uniquely named rectangle makes the loading boundary explicit;
+        the HTTP call returns only after BDS emits its real load confirmation.
+        """
+        if not isinstance(request, dict):
+            raise ValueError("Solicitud de colocación inválida.")
+        identifier, _, _ = validate_structure_id(request.get("structure"))
+        coordinates = tuple(request.get(axis) for axis in ("x", "y", "z"))
+        if any(not isinstance(value, int) or isinstance(value, bool) for value in coordinates):
+            raise ValueError("Las coordenadas de colocación deben ser enteros.")
+        x, y, z = coordinates
+        if any(value < -29_999_984 or value > 29_999_984 for value in coordinates):
+            raise ValueError("Las coordenadas de colocación están fuera del mundo permitido.")
+        dimensions = request.get("dimensions")
+        if not isinstance(dimensions, dict):
+            raise ValueError("Faltan las dimensiones verificadas de la estructura.")
+        try:
+            width, height, depth = (dimensions[key] for key in ("x", "y", "z"))
+        except KeyError as error:
+            raise ValueError("Las dimensiones verificadas están incompletas.") from error
+        if any(not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= 2048 for value in (width, height, depth)):
+            raise ValueError("Las dimensiones verificadas no son seguras.")
+        rotation = request.get("rotation", "0_degrees")
+        mirror = request.get("mirror", "none")
+        if rotation not in {"0_degrees", "90_degrees", "180_degrees", "270_degrees"}:
+            raise ValueError("La rotación no es válida.")
+        if mirror not in {"none", "x", "z", "xz"}:
+            raise ValueError("El espejo no es válido.")
+
+        corners = [(0, 0), (width - 1, 0), (0, depth - 1), (width - 1, depth - 1)]
+        transformed: list[tuple[int, int]] = []
+        for local_x, local_z in corners:
+            if mirror in {"x", "xz"}:
+                local_x = -local_x
+            if mirror in {"z", "xz"}:
+                local_z = -local_z
+            if rotation == "90_degrees":
+                local_x, local_z = -local_z, local_x
+            elif rotation == "180_degrees":
+                local_x, local_z = -local_x, -local_z
+            elif rotation == "270_degrees":
+                local_x, local_z = local_z, -local_x
+            transformed.append((local_x, local_z))
+        min_x = x + min(value[0] for value in transformed)
+        max_x = x + max(value[0] for value in transformed)
+        min_z = z + min(value[1] for value in transformed)
+        max_z = z + max(value[1] for value in transformed)
+        area_name = f"spb_place_{uuid.uuid4().hex[:12]}"
+        add = f"tickingarea add {min_x} 0 {min_z} {max_x} 0 {max_z} {area_name} true"
+        load = f"structure load {identifier} {x} {y} {z} {rotation} {mirror} true true"
+        with self._query_lock:
+            added = False
+            try:
+                self._command_until(add, TICKING_AREA_ADDED_PATTERN, STRUCTURE_COMMAND_TIMEOUT_SECONDS)
+                added = True
+                self._command_until(
+                    load,
+                    re.compile(rf"Loaded a structure of name\s+{re.escape(identifier)}\b", re.IGNORECASE),
+                    STRUCTURE_COMMAND_TIMEOUT_SECONDS,
+                )
+            finally:
+                if added:
+                    self._command_until(
+                        f"tickingarea remove {area_name}",
+                        TICKING_AREA_REMOVED_PATTERN,
+                        STRUCTURE_COMMAND_TIMEOUT_SECONDS,
+                    )
+        return {
+            "ok": True,
+            "structure": identifier,
+            "dimensions": {"x": width, "y": height, "z": depth},
+            "area": {"from": {"x": min_x, "z": min_z}, "to": {"x": max_x, "z": max_z}},
+        }
 
     def list_players(self) -> dict[str, Any]:
         """Return only the current BDS `list` response, never a cached estimate."""
@@ -666,7 +746,7 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
         if not self._require_authorization():
             return
         path = urlparse(self.path).path
-        if path not in {"/commands", "/properties", "/gamerules", "/world/reset", "/structures/export"}:
+        if path not in {"/commands", "/properties", "/gamerules", "/world/reset", "/structures/export", "/structures/place"}:
             self._send_json(HTTPStatus.NOT_FOUND, {"error": "No existe esa ruta."})
             return
         try:
@@ -680,6 +760,9 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(length))
             if path == "/structures/export":
                 self._send_json(HTTPStatus.OK, self.bridge_server.bridge.export_structure(body.get("source")))
+                return
+            if path == "/structures/place":
+                self._send_json(HTTPStatus.OK, self.bridge_server.bridge.place_structure(body))
                 return
             if path == "/world/reset":
                 operation = request_world_reset(self.bridge_server.bridge.root, body)

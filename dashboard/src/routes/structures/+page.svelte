@@ -13,7 +13,13 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 
-	type Structure = { name: string; size: number; sha: string; path: string };
+	type Structure = {
+		name: string;
+		size: number;
+		sha: string;
+		path: string;
+		dimensions: { x: number; y: number; z: number } | null;
+	};
 
 	let structures = $state<Structure[]>([]);
 	let error = $state('');
@@ -47,6 +53,10 @@
 		return bytes < 1024 * 1024
 			? `${Math.max(1, Math.round(bytes / 1024))} KiB`
 			: `${(bytes / 1024 / 1024).toFixed(2)} MiB`;
+	}
+
+	function formatDimensions(dimensions: Structure['dimensions']) {
+		return dimensions ? `${dimensions.x} × ${dimensions.y} × ${dimensions.z} bloques` : 'Dimensiones no disponibles';
 	}
 
 	async function load() {
@@ -159,11 +169,18 @@
 			const body = (await response.json().catch(() => ({}))) as {
 				error?: string;
 				environment?: string;
+				confirmed?: boolean;
 			};
 			if (!response.ok) throw new Error(body.error ?? 'No se pudo colocar.');
-			toast.success('Comando de colocación enviado', {
-				description: `Revisa la terminal de ${body.environment === 'production' ? 'producción' : 'staging'} para confirmar el resultado.`
-			});
+			if (body.confirmed) {
+				toast.success('Estructura colocada correctamente', {
+					description: `Bedrock confirmó la carga y se retiró el área temporal de ${body.environment === 'production' ? 'producción' : 'staging'}.`
+				});
+			} else {
+				toast.success('Comando de colocación enviado', {
+					description: 'Producción aún no tiene el flujo de carga temporal; confirma el resultado en la terminal.'
+				});
+			}
 			confirmation = '';
 		} catch (reason) {
 			toast.error('No se pudo colocar la estructura', {
@@ -277,8 +294,10 @@
 			><Card.Content
 				>{#if structures.length}<div class="divide-y rounded-md border">
 						{#each structures as structure}<div class="flex flex-wrap items-center gap-3 px-4 py-3">
-								<code class="min-w-0 flex-1 truncate">spb:{structure.name}</code><span
-									class="text-sm text-muted-foreground">{formatSize(structure.size)}</span
+								<div class="min-w-0 flex-1">
+									<code class="block truncate">spb:{structure.name}</code>
+									<span class="text-sm text-muted-foreground">{formatDimensions(structure.dimensions)}</span>
+								</div><span class="text-sm text-muted-foreground">{formatSize(structure.size)}</span
 								><Button
 									size="sm"
 									variant="outline"
