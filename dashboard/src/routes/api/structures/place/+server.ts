@@ -47,10 +47,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		const mirror = (MIRRORS.has(body.mirror) ? body.mirror : 'none') as StructureMirror;
 		const mode = PLACEMENT_MODES.has(body.mode) ? body.mode : 'instant';
 		const anchor = (ANCHORS.has(body.anchor) ? body.anchor : 'center') as StructureAnchor;
-		const anchorLabel = anchor === 'center' ? 'centro' : 'origen';
-		const expected = `spb:${name} (${anchorLabel}) @ ${x} ${y} ${z}`;
-		if (body.confirmation !== expected)
-			throw new Error(`Escribe exactamente ${expected} para confirmar.`);
+		if (body.confirmed !== true) throw new Error('Confirma la colocación antes de continuar.');
 		const stored = await describeStoredStructure(name);
 		const structure = stored ?? (await describeStructure(name));
 		const origin = resolveStructureOrigin(

@@ -29,6 +29,18 @@
 		source?: 'github' | 'r2';
 	};
 
+	type PendingPlacement = {
+		name: string;
+		x: number;
+		y: number;
+		z: number;
+		rotation: string;
+		mirror: string;
+		mode: 'instant' | 'layers';
+		anchor: StructureAnchor;
+		origin: { x: number; y: number; z: number };
+	};
+
 	let structures = $state<Structure[]>([]);
 	let error = $state('');
 	let loading = $state(true);
@@ -48,7 +60,7 @@
 	let mirror = $state('none');
 	let placementMode = $state<'instant' | 'layers'>('instant');
 	let anchor = $state<StructureAnchor>('center');
-	let confirmation = $state('');
+	let pendingPlacement = $state<PendingPlacement | null>(null);
 	let fileInput: HTMLInputElement;
 	let selectedFiles = $state<FileList | undefined>(undefined);
 	let environment = $state<'staging' | 'production'>('staging');
@@ -220,29 +232,41 @@
 		);
 	}
 
-	function expectedConfirmation() {
+	function placementRequest() {
 		const position = requestedPosition();
-		if (!selected || !position) return '';
-		return `spb:${selected} (${anchor === 'center' ? 'centro' : 'origen'}) @ ${position.x} ${position.y} ${position.z}`;
+		const origin = placementOrigin();
+		if (!selected || !position || !origin) return null;
+		return {
+			name: selected,
+			...position,
+			rotation,
+			mirror,
+			mode: placementMode,
+			anchor,
+			origin
+		};
+	}
+
+	function preparePlacement() {
+		const request = placementRequest();
+		if (!request) {
+			toast.error('Completa una estructura y coordenadas enteras antes de continuar.');
+			return;
+		}
+		pendingPlacement = request;
 	}
 
 	async function place() {
-		if (placing || !expectedConfirmation()) return;
+		const request = pendingPlacement;
+		if (placing || !request) return;
 		placing = true;
 		try {
 			const response = await fetch('/api/structures/place', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({
-					name: selected,
-					x: Number(x),
-					y: Number(y),
-					z: Number(z),
-					rotation,
-					mirror,
-					mode: placementMode,
-					anchor,
-					confirmation
+					...request,
+					confirmed: true
 				})
 			});
 			const body = (await response.json().catch(() => ({}))) as {
@@ -253,7 +277,10 @@
 			if (!response.ok) throw new Error(body.error ?? 'No se pudo colocar.');
 			if (body.confirmed) {
 				toast.success('Estructura colocada correctamente', {
-					description: `Bedrock confirmó la carga y se retiró el área temporal de ${body.environment === 'production' ? 'producción' : 'staging'}.`
+					description:
+						request.mode === 'layers'
+							? `Bedrock terminó la colocación capa por capa y retiró el área temporal de ${body.environment === 'production' ? 'producción' : 'staging'}.`
+							: `Bedrock confirmó la carga y retiró el área temporal de ${body.environment === 'production' ? 'producción' : 'staging'}.`
 				});
 			} else {
 				toast.success('Comando de colocación enviado', {
@@ -261,7 +288,7 @@
 						'Producción aún no tiene el flujo de carga temporal; confirma el resultado en la terminal.'
 				});
 			}
-			confirmation = '';
+			pendingPlacement = null;
 		} catch (reason) {
 			toast.error('No se pudo colocar la estructura', {
 				description: reason instanceof Error ? reason.message : undefined
@@ -506,27 +533,47 @@
 							>Capa por capa (12 segundos)</option
 						></select
 					>
-					{#if placementMode === 'layers'}<p class="text-sm text-muted-foreground"
-						>Bedrock construye desde la base hacia arriba; es la opción indicada para arena,
-						grava u otros bloques afectados por gravedad.</p
-					>{:else}<p class="text-sm text-muted-foreground"
-						>Bedrock coloca todos los bloques inmediatamente. En estructuras grandes el cliente puede
-						tardar un momento adicional en dibujar los chunks.</p
-					>{/if}
+					{#if placementMode === 'layers'}<p class="text-sm text-muted-foreground">
+							Bedrock construye desde la base hacia arriba; es la opción indicada para arena, grava
+							u otros bloques afectados por gravedad.
+						</p>{:else}<p class="text-sm text-muted-foreground">
+							Bedrock coloca todos los bloques inmediatamente. En estructuras grandes el cliente
+							puede tardar un momento adicional en dibujar los chunks.
+						</p>{/if}
 				</div>
-				<div class="grid gap-2 md:col-span-3">
-					<Label for="confirm"
-						>Para confirmar, escribe exactamente <code
-							>{expectedConfirmation() || 'spb:nombre @ X Y Z'}</code
-						></Label
-					><Input id="confirm" bind:value={confirmation} autocomplete="off" />
-				</div></Card.Content
+				{#if pendingPlacement}<div
+						class="grid gap-3 rounded-md border border-destructive/50 bg-destructive/5 p-4 md:col-span-3"
+					>
+						<div class="space-y-1">
+							<p class="font-medium">Confirmar colocación</p>
+							<p class="text-sm text-muted-foreground">
+								<strong>spb:{pendingPlacement.name}</strong> se colocará en {pendingPlacement.x}, {pendingPlacement.y},
+								{pendingPlacement.z}
+								({pendingPlacement.anchor === 'center' ? 'centro' : 'origen'}; origen real {pendingPlacement
+									.origin.x}, {pendingPlacement.origin.y}, {pendingPlacement.origin.z}). Modo: {pendingPlacement.mode ===
+								'layers'
+									? 'capa por capa durante 12 segundos'
+									: 'instantáneo'}.
+							</p>
+						</div>
+						<div class="flex flex-wrap gap-2">
+							<Button variant="outline" onclick={() => (pendingPlacement = null)} disabled={placing}
+								>Cancelar</Button
+							>
+							<Button variant="destructive" onclick={() => void place()} disabled={placing}
+								>{#if placing}<LoaderCircle class="animate-spin" />
+									{pendingPlacement.mode === 'layers'
+										? 'Construyendo capa por capa…'
+										: 'Colocando…'}{:else}<MapPinned /> Confirmar y colocar{/if}</Button
+							>
+						</div>
+					</div>{/if}</Card.Content
 			><Card.Footer
 				><Button
 					variant="destructive"
-					onclick={() => void place()}
-					disabled={placing || !selected || confirmation !== expectedConfirmation()}
-					>{#if placing}<LoaderCircle class="animate-spin" /> Enviando…{:else}<MapPinned /> Colocar estructura{/if}</Button
+					onclick={preparePlacement}
+					disabled={placing || !!pendingPlacement || !placementRequest()}
+					><MapPinned /> Revisar colocación</Button
 				></Card.Footer
 			></Card.Root
 		>
