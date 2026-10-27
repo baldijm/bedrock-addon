@@ -12,6 +12,12 @@
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
+	import {
+		resolveStructureOrigin,
+		type StructureAnchor,
+		type StructureMirror,
+		type StructureRotation
+	} from '#lib/structure-placement';
 
 	type Structure = {
 		name: string;
@@ -35,6 +41,7 @@
 	let z = $state('');
 	let rotation = $state('0_degrees');
 	let mirror = $state('none');
+	let anchor = $state<StructureAnchor>('center');
 	let confirmation = $state('');
 	let fileInput: HTMLInputElement;
 	let selectedFiles = $state<FileList | undefined>(undefined);
@@ -56,7 +63,9 @@
 	}
 
 	function formatDimensions(dimensions: Structure['dimensions']) {
-		return dimensions ? `${dimensions.x} × ${dimensions.y} × ${dimensions.z} bloques` : 'Dimensiones no disponibles';
+		return dimensions
+			? `${dimensions.x} × ${dimensions.y} × ${dimensions.z} bloques`
+			: 'Dimensiones no disponibles';
 	}
 
 	async function load() {
@@ -145,8 +154,33 @@
 		}
 	}
 
+	function selectedDimensions() {
+		return structures.find((structure) => structure.name === selected)?.dimensions ?? null;
+	}
+
+	function requestedPosition() {
+		if (!x || !y || !z) return null;
+		const position = { x: Number(x), y: Number(y), z: Number(z) };
+		return Object.values(position).every(Number.isInteger) ? position : null;
+	}
+
+	function placementOrigin() {
+		const position = requestedPosition();
+		const dimensions = selectedDimensions();
+		if (!position || !dimensions) return null;
+		return resolveStructureOrigin(
+			position,
+			dimensions,
+			rotation as StructureRotation,
+			mirror as StructureMirror,
+			anchor
+		);
+	}
+
 	function expectedConfirmation() {
-		return selected && x && y && z ? `spb:${selected} @ ${x} ${y} ${z}` : '';
+		const position = requestedPosition();
+		if (!selected || !position) return '';
+		return `spb:${selected} (${anchor === 'center' ? 'centro' : 'origen'}) @ ${position.x} ${position.y} ${position.z}`;
 	}
 
 	async function place() {
@@ -163,6 +197,7 @@
 					z: Number(z),
 					rotation,
 					mirror,
+					anchor,
 					confirmation
 				})
 			});
@@ -178,7 +213,8 @@
 				});
 			} else {
 				toast.success('Comando de colocación enviado', {
-					description: 'Producción aún no tiene el flujo de carga temporal; confirma el resultado en la terminal.'
+					description:
+						'Producción aún no tiene el flujo de carga temporal; confirma el resultado en la terminal.'
 				});
 			}
 			confirmation = '';
@@ -296,8 +332,11 @@
 						{#each structures as structure}<div class="flex flex-wrap items-center gap-3 px-4 py-3">
 								<div class="min-w-0 flex-1">
 									<code class="block truncate">spb:{structure.name}</code>
-									<span class="text-sm text-muted-foreground">{formatDimensions(structure.dimensions)}</span>
-								</div><span class="text-sm text-muted-foreground">{formatSize(structure.size)}</span
+									<span class="text-sm text-muted-foreground"
+										>{formatDimensions(structure.dimensions)}</span
+									>
+								</div>
+								<span class="text-sm text-muted-foreground">{formatSize(structure.size)}</span
 								><Button
 									size="sm"
 									variant="outline"
@@ -340,6 +379,25 @@
 				</div>
 				<div class="grid gap-2">
 					<Label for="z">Z</Label><Input id="z" bind:value={z} inputmode="numeric" />
+				</div>
+				<div class="grid gap-2 md:col-span-3">
+					<Label for="anchor">Anclar coordenada en</Label><select
+						id="anchor"
+						class="h-9 rounded-md border bg-background px-3 text-sm"
+						bind:value={anchor}
+						><option value="center">Centro horizontal (recomendado)</option><option value="origin"
+							>Origen/esquina nativa de Minecraft</option
+						></select
+					>{#if anchor === 'center'}<p class="text-sm text-muted-foreground">
+							La X y Z indican el centro de la construcción. La Y sigue siendo su base.
+						</p>{:else}<p class="text-sm text-muted-foreground">
+							La X, Y y Z son el origen nativo: una esquina inferior de la estructura.
+						</p>{/if}
+					{#if placementOrigin() && anchor === 'center'}<p class="text-sm text-muted-foreground">
+							Bedrock la colocará desde el origen calculado <code
+								>{placementOrigin()!.x} {placementOrigin()!.y} {placementOrigin()!.z}</code
+							>, respetando el giro y el espejo.
+						</p>{/if}
 				</div>
 				<div class="grid gap-2">
 					<Label for="rotation">Giro</Label><select
