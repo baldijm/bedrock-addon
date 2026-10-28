@@ -47,7 +47,7 @@ WORLD_RESET_UNIT_PREFIX = "spb-staging-world-reset@"
 UPDATE_REQUESTS = Path("/var/lib/spb/bedrock-update/requests")
 UPDATE_STATUS = Path("/var/lib/spb/bedrock-update/status")
 UPDATE_UNIT_PREFIX = "spb-staging-bedrock-update@"
-VERSION_LOG_PATTERN = re.compile(r"\bVersion:\s*(?P<version>[0-9]+(?:\.[0-9]+){2,3})\b", re.IGNORECASE)
+VERSION_LOG_PATTERN = re.compile(r"\bINFO\]\s+Version:\s*(?P<version>[0-9]+(?:\.[0-9]+){2,3})\b")
 SERVER_PROPERTY_SPECS: dict[str, tuple[str, int | None, int | None, set[str] | None]] = {
     "server-name": ("text", None, None, None),
     "level-name": ("level", None, None, None),

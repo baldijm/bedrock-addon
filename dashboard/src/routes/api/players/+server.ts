@@ -8,8 +8,6 @@ export const GET: RequestHandler = async ({ request }) => {
 	if (import.meta.env.DEV && process.env.CONSOLE_PASSWORD)
 		return json({ online: null, capacity: null, players: [], source: 'local-development' });
 	const environment = resolveEnvironment(request);
-	if (environment === 'production')
-		return json({ online: null, capacity: null, players: [], source: 'production-observer', available: false, environment });
 	try {
 		return json({ ...(await bridgeRequest(environment, '/players')), environment });
 	} catch (error) {

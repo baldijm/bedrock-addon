@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import bedrock_console_bridge as bridge_module
-from bedrock_console_bridge import BedrockConsoleBridge, OutputBuffer, parse_address, request_world_reset, validate_command, validate_structure_id
+from bedrock_console_bridge import BedrockConsoleBridge, OutputBuffer, parse_address, read_update_status, request_world_reset, validate_command, validate_structure_id
 
 
 class ValidateCommandTests(unittest.TestCase):
@@ -64,6 +64,9 @@ class StructurePlacementTests(unittest.TestCase):
                 "maxX": 162,
                 "minZ": 20,
                 "maxZ": 90,
+                "width": 153,
+                "height": 144,
+                "depth": 71,
                 "rotation": "0_degrees",
                 "mirror": "none",
                 "mode": "instant",
@@ -226,6 +229,17 @@ class PlayerListTests(unittest.TestCase):
         output.append("some unrelated server line")
         with self.assertRaises(RuntimeError):
             bridge.list_players()
+
+
+class UpdateStatusTests(unittest.TestCase):
+    def test_reads_server_version_and_ignores_pack_version(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = OutputBuffer()
+            output.append("[2026-10-28 18:37:33:020 INFO] Version: 1.26.52.3")
+            output.append("[2026-10-28 18:37:33:439 INFO] Pack Stack - BP 1.0.50 (version: 1.0.56)")
+            with patch.object(bridge_module, "UPDATE_STATUS", root / "status"):
+                self.assertEqual(read_update_status(root, output)["installedVersion"], "1.26.52.3")
 
 
 if __name__ == "__main__":

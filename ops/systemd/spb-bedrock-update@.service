@@ -1,0 +1,14 @@
+[Unit]
+Description=SPB production Bedrock update operation %i
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/bin/python3 /usr/local/lib/spb/bedrock-update.py --environment production --request %i
+TimeoutStartSec=35min
+Nice=10
+PrivateTmp=true
+ProtectHome=true
+ReadWritePaths=/opt/bedrock /opt/bedrock-deploy /var/backups/bedrock /var/lib/spb

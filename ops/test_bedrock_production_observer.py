@@ -27,5 +27,17 @@ class WorldStateTests(unittest.TestCase):
                 )
 
 
+class UpdateStatusTests(unittest.TestCase):
+    def test_reads_bedrock_version_and_ignores_pack_version(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            lines = [
+                {"text": "[2026-10-28 18:37:33:020 INFO] Version: 1.26.52.3"},
+                {"text": "[2026-10-28 18:37:33:439 INFO] Pack Stack - BP 1.0.50 (version: 1.0.56)"},
+            ]
+            with patch.object(observer, "ROOT", root), patch.object(observer, "UPDATE_STATUS", root / "status.json"), patch.object(observer, "console_lines", return_value=lines):
+                self.assertEqual(observer.update_status("token")["installedVersion"], "1.26.52.3")
+
+
 if __name__ == "__main__":
     unittest.main()

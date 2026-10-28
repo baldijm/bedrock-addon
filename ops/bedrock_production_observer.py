@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import struct
 import subprocess
+import urllib.request
 from urllib.parse import urlparse
 import uuid
 
@@ -27,7 +28,8 @@ PROMOTION_UNIT = "spb-production-world-promote@{}.service"
 UPDATE_REQUESTS = Path("/var/lib/spb/bedrock-update/requests")
 UPDATE_STATUS = Path("/var/lib/spb/bedrock-update/status/production.json")
 UPDATE_UNIT = "spb-bedrock-update@{}.service"
-VERSION_LOG_PATTERN = re.compile(r"\bVersion:\s*(?P<version>[0-9]+(?:\.[0-9]+){2,3})\b", re.IGNORECASE)
+VERSION_LOG_PATTERN = re.compile(r"\bINFO\]\s+Version:\s*(?P<version>[0-9]+(?:\.[0-9]+){2,3})\b")
+PRODUCTION_CONSOLE_LOGS = "http://127.0.0.1:3004/logs?after=0"
 SAFE_PROPERTIES = {
     "server-name", "level-name", "gamemode", "difficulty", "max-players",
     "view-distance", "tick-distance", "allow-cheats", "allow-list",
@@ -181,7 +183,20 @@ def request_promotion(confirmation: object) -> dict[str, object]:
     return {"ok": True, "operation": operation, "productionWorld": world, "state": "queued"}
 
 
-def update_status() -> dict[str, object]:
+def console_lines(token: str) -> list[dict[str, object]]:
+    request = urllib.request.Request(PRODUCTION_CONSOLE_LOGS, headers={"Authorization": token})
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            parsed = json.load(response)
+    except (OSError, ValueError) as error:
+        raise RuntimeError("No se pudo consultar la versión viva de producción.") from error
+    lines = parsed.get("lines") if isinstance(parsed, dict) else None
+    if not isinstance(lines, list):
+        raise RuntimeError("El bridge de producción no entregó registros válidos.")
+    return [line for line in lines if isinstance(line, dict)]
+
+
+def update_status(token: str) -> dict[str, object]:
     result: dict[str, object] = {"environment": "production", "state": "idle"}
     try:
         stored = json.loads((ROOT / ".spb-bedrock-version.json").read_text(encoding="utf-8"))
@@ -190,7 +205,7 @@ def update_status() -> dict[str, object]:
     except (OSError, json.JSONDecodeError):
         pass
     if "installedVersion" not in result:
-        for line in reversed(journal_lines()):
+        for line in reversed(console_lines(token)):
             match = VERSION_LOG_PATTERN.search(str(line["text"]))
             if match:
                 result["installedVersion"] = match.group("version")
@@ -204,12 +219,12 @@ def update_status() -> dict[str, object]:
     return result
 
 
-def request_update(confirmation: object) -> dict[str, object]:
+def request_update(confirmation: object, token: str) -> dict[str, object]:
     if confirmation is not True:
         raise ValueError("Confirma la actualización antes de continuar.")
     if not UPDATE_REQUESTS.is_dir() or UPDATE_REQUESTS.is_symlink():
         raise RuntimeError("El actualizador de Bedrock no está instalado.")
-    status = update_status()
+    status = update_status(token)
     if status.get("state") in {"preparing", "downloading", "validating", "backing-up", "stopping", "installing", "starting"}:
         raise RuntimeError("Ya hay una actualización en curso.")
     operation = uuid.uuid4().hex
@@ -296,7 +311,7 @@ class ObserverRequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/updates/status":
             try:
-                self.send_json(HTTPStatus.OK, update_status())
+                self.send_json(HTTPStatus.OK, update_status(self.server.token))
             except RuntimeError as error:
                 self.send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": str(error)})
             return
@@ -318,7 +333,7 @@ class ObserverRequestHandler(BaseHTTPRequestHandler):
             if not isinstance(body, dict):
                 raise ValueError("Solicitud de promoción inválida.")
             if path == "/updates":
-                self.send_json(HTTPStatus.ACCEPTED, request_update(body.get("confirmed")))
+                self.send_json(HTTPStatus.ACCEPTED, request_update(body.get("confirmed"), self.server.token))
             else:
                 self.send_json(HTTPStatus.ACCEPTED, request_promotion(body.get("confirmation")))
         except ValueError as error:
