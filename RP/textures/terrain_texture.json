@@ -2,7 +2,83 @@
   "resource_pack_name": "SPB",
   "texture_name": "atlas.terrain",
   "texture_data": {
-    "spb_bloque_verde": { "textures": "textures/blocks/bloque_verde" },
-    "spb_bloque_rojo": { "textures": "textures/blocks/bloque_rojo" }
+    "spb_bloque_verde": {
+      "textures": "textures/blocks/bloque_verde"
+    },
+    "spb_bloque_rojo": {
+      "textures": "textures/blocks/bloque_rojo"
+    },
+    "black_concrete_powder": {
+      "textures": "textures/blocks/concrete_powder_black"
+    },
+    "brown_concrete_powder": {
+      "textures": "textures/blocks/concrete_powder_brown"
+    },
+    "cyan_concrete_powder": {
+      "textures": "textures/blocks/concrete_powder_cyan"
+    },
+    "gray_concrete_powder": {
+      "textures": "textures/blocks/concrete_powder_gray"
+    },
+    "green_concrete_powder": {
+      "textures": "textures/blocks/concrete_powder_green"
+    },
+    "light_blue_concrete_powder": {
+      "textures": "textures/blocks/concrete_powder_light_blue"
+    },
+    "light_gray_concrete_powder": {
+      "textures": "textures/blocks/concrete_powder_light_gray"
+    },
+    "lime_concrete_powder": {
+      "textures": "textures/blocks/concrete_powder_lime"
+    },
+    "spb_lime_concrete_powder_fixed": {
+      "textures": "textures/blocks/spb_lime_concrete_powder_fixed"
+    },
+    "orange_concrete_powder": {
+      "textures": "textures/blocks/concrete_powder_orange"
+    },
+    "red_concrete_powder": {
+      "textures": "textures/blocks/concrete_powder_red"
+    },
+    "yellow_concrete_powder": {
+      "textures": "textures/blocks/concrete_powder_yellow"
+    },
+    "red_sand": {
+      "textures": "textures/blocks/spb_red_sand"
+    },
+    "gravel": {
+      "textures": "textures/blocks/gravel"
+    },
+    "concrete_powder_black": {
+      "textures": "textures/blocks/spb_concrete_powder_black"
+    },
+    "concrete_powder_brown": {
+      "textures": "textures/blocks/spb_concrete_powder_brown"
+    },
+    "concrete_powder_cyan": {
+      "textures": "textures/blocks/spb_concrete_powder_cyan"
+    },
+    "concrete_powder_gray": {
+      "textures": "textures/blocks/spb_concrete_powder_gray"
+    },
+    "concrete_powder_green": {
+      "textures": "textures/blocks/spb_concrete_powder_green"
+    },
+    "concrete_powder_light_blue": {
+      "textures": "textures/blocks/spb_concrete_powder_light_blue"
+    },
+    "concrete_powder_silver": {
+      "textures": "textures/blocks/spb_concrete_powder_silver"
+    },
+    "concrete_powder_orange": {
+      "textures": "textures/blocks/spb_concrete_powder_orange"
+    },
+    "concrete_powder_red": {
+      "textures": "textures/blocks/spb_concrete_powder_red"
+    },
+    "concrete_powder_yellow": {
+      "textures": "textures/blocks/spb_concrete_powder_yellow"
+    }
   }
 }

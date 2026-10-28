@@ -6,7 +6,7 @@
       "minecraft:geometry": "minecraft:geometry.full_block",
       "minecraft:destructible_by_mining": { "seconds_to_destroy": 0.5 },
       "minecraft:destructible_by_explosion": { "explosion_resistance": 0.5 },
-      "minecraft:material_instances": { "*": { "texture": "concrete_powder_lime", "render_method": "opaque" } }
+      "minecraft:material_instances": { "*": { "texture": "spb_lime_concrete_powder_fixed", "render_method": "opaque" } }
     }
   }
 }

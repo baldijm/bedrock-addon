@@ -6,3 +6,26 @@ item.spb:red_diamond=Diamante rojo
 item.spb:menu=Menú
 tile.spb:bloque_verde.name=Bloque verde
 tile.spb:bloque_rojo.name=Bloque rojo
+tile.spb:lime_concrete_powder_fixed.name=Polvo de concreto lima fijo
+
+tile.spb:black_concrete_powder_fixed.name=black concrete powder fijo
+
+tile.spb:brown_concrete_powder_fixed.name=brown concrete powder fijo
+
+tile.spb:cyan_concrete_powder_fixed.name=cyan concrete powder fijo
+
+tile.spb:gray_concrete_powder_fixed.name=gray concrete powder fijo
+
+tile.spb:green_concrete_powder_fixed.name=green concrete powder fijo
+
+tile.spb:light_blue_concrete_powder_fixed.name=light blue concrete powder fijo
+
+tile.spb:light_gray_concrete_powder_fixed.name=light gray concrete powder fijo
+
+tile.spb:orange_concrete_powder_fixed.name=orange concrete powder fijo
+
+tile.spb:red_concrete_powder_fixed.name=red concrete powder fijo
+
+tile.spb:red_sand_fixed.name=red sand fijo
+
+tile.spb:yellow_concrete_powder_fixed.name=yellow concrete powder fijo
