@@ -145,18 +145,19 @@
 					Ctrl/Cmd + B para contraer
 				</p>
 			</Sidebar.Footer>
-			<Sidebar.Rail />
 		</Sidebar.Root>
 		<Sidebar.Inset class="min-w-0">
-			<header
-				class="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:px-6"
-			>
-				<Sidebar.Trigger aria-label="Alternar navegación" />
-				<div class="min-w-0 flex-1">
-					<p class="truncate text-sm font-medium">Consola SPB</p>
-				</div>
-				<EnvironmentSelector />
-			</header>
+			{#if !page.url.pathname.startsWith('/terminal')}
+				<header
+					class="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:px-6"
+				>
+					<Sidebar.Trigger aria-label="Alternar navegación" />
+					<div class="min-w-0 flex-1">
+						<p class="truncate text-sm font-medium">Consola SPB</p>
+					</div>
+					<EnvironmentSelector />
+				</header>
+			{/if}
 			{@render children()}
 		</Sidebar.Inset>
 	</Sidebar.Provider>
