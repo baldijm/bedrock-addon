@@ -40,7 +40,7 @@
 				!window.location.pathname.startsWith('/terminal')
 			) {
 				const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-				window.location.replace(`/terminal?returnTo=${encodeURIComponent(returnTo)}`);
+				window.location.replace(`/login?returnTo=${encodeURIComponent(returnTo)}`);
 			}
 			return response;
 		};
@@ -57,6 +57,9 @@
 </svelte:head>
 
 <div class="dark min-h-svh bg-background text-foreground">
+	{#if page.url.pathname === '/login'}
+		{@render children()}
+	{:else}
 	<Sidebar.Provider>
 		<Sidebar.Root collapsible="icon">
 			<Sidebar.Header class="h-16 border-b px-3">
@@ -161,5 +164,6 @@
 			{@render children()}
 		</Sidebar.Inset>
 	</Sidebar.Provider>
+	{/if}
 </div>
 <Toaster theme="dark" position="top-right" richColors closeButton />

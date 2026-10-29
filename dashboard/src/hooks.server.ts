@@ -1,7 +1,7 @@
 import { redirect, type Handle } from '@sveltejs/kit';
 import { isAuthenticated, unauthorized } from '#lib/server/auth';
 
-const publicPages = new Set(['/login', '/terminal']);
+const publicPages = new Set(['/login']);
 const publicApi = new Set(['/api/login', '/api/logout']);
 
 function returnTo(url: URL) {
@@ -11,8 +11,8 @@ function returnTo(url: URL) {
 /**
  * The dashboard used to protect individual endpoints only. That left rendered
  * pages visible after a session expired, until their first request failed.
- * Keep the terminal public because it is also the sign-in screen; every other
- * application route now has one server-side session gate.
+ * The sign-in screen is intentionally the only public application page; every
+ * dashboard route, including the terminal, has one server-side session gate.
  */
 export const handle: Handle = async ({ event, resolve }) => {
 	const { pathname } = event.url;
@@ -30,7 +30,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	if (publicPages.has(pathname)) return resolve(event);
 	if (!(await isAuthenticated(event.request)))
-		redirect(303, `/terminal?returnTo=${encodeURIComponent(returnTo(event.url))}`);
+		redirect(303, `/login?returnTo=${encodeURIComponent(returnTo(event.url))}`);
 
 	return resolve(event);
 };
