@@ -61,7 +61,7 @@
 		{@render children()}
 	{:else}
 	<Sidebar.Provider>
-		<Sidebar.Root collapsible="icon" class="border-e-0">
+		<Sidebar.Root collapsible="icon" class="!border-e-0">
 			<Sidebar.Header class="h-16 border-b px-3">
 				<a href="/" class="flex min-w-0 items-center gap-2 rounded-md px-1 py-2">
 					<span
