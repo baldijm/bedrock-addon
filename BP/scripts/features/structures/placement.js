@@ -181,8 +181,8 @@ function makeNoAirVariant(request) {
 /**
  * The Script API grants each pack a smaller private ticking-area budget than
  * the command system. Large remote builds can exceed that budget even though
- * their footprint is valid. Split their footprint into command ticking areas
- * of at most 10x10 chunks (the Bedrock command limit is 100 chunks per area).
+ * their footprint is valid. A 100-chunk preload can trip the server watchdog
+ * on a freshly generated remote location, so use 4x10 chunks per area.
  */
 function commandAreaSegments(request) {
     const minChunkX = Math.floor(request.minX / 16);
@@ -191,8 +191,8 @@ function commandAreaSegments(request) {
     const maxChunkZ = Math.floor(request.maxZ / 16);
     const segments = [];
     for (let chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ += 10) {
-        for (let chunkX = minChunkX; chunkX <= maxChunkX; chunkX += 10) {
-            const endChunkX = Math.min(maxChunkX, chunkX + 9);
+        for (let chunkX = minChunkX; chunkX <= maxChunkX; chunkX += 4) {
+            const endChunkX = Math.min(maxChunkX, chunkX + 3);
             const endChunkZ = Math.min(maxChunkZ, chunkZ + 9);
             segments.push({
                 from: { x: Math.max(request.minX, chunkX * 16), z: Math.max(request.minZ, chunkZ * 16) },
