@@ -46,6 +46,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		) as StructureRotation;
 		const mirror = (MIRRORS.has(body.mirror) ? body.mirror : 'none') as StructureMirror;
 		const mode = PLACEMENT_MODES.has(body.mode) ? body.mode : 'instant';
+		const includeBlocks = body.includeBlocks !== false;
 		const includeAir = body.includeAir !== false;
 		const protectBlocks = body.protectBlocks === true;
 		const anchor = (ANCHORS.has(body.anchor) ? body.anchor : 'center') as StructureAnchor;
@@ -102,6 +103,7 @@ export const POST: RequestHandler = async ({ request }) => {
 					rotation,
 					mirror,
 					mode,
+					includeBlocks,
 					includeAir,
 					protectBlocks,
 					dimensions: structure.dimensions

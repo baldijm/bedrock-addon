@@ -651,6 +651,7 @@ class BedrockConsoleBridge:
         rotation = request.get("rotation", "0_degrees")
         mirror = request.get("mirror", "none")
         mode = request.get("mode", "instant")
+        include_blocks = request.get("includeBlocks", True)
         include_air = request.get("includeAir", True)
         protect_blocks = request.get("protectBlocks", False)
         if rotation not in {"0_degrees", "90_degrees", "180_degrees", "270_degrees"}:
@@ -659,6 +660,8 @@ class BedrockConsoleBridge:
             raise ValueError("El espejo no es válido.")
         if mode not in {"instant", "layers"}:
             raise ValueError("El modo de colocación no es válido.")
+        if not isinstance(include_blocks, bool):
+            raise ValueError("La opción de colocar bloques no es válida.")
         if not isinstance(include_air, bool):
             raise ValueError("La opción de incluir aire no es válida.")
         if not isinstance(protect_blocks, bool):
@@ -700,6 +703,7 @@ class BedrockConsoleBridge:
                 "rotation": rotation,
                 "mirror": mirror,
                 "mode": mode,
+                "includeBlocks": include_blocks,
                 "includeAir": include_air,
                 "protectBlocks": protect_blocks,
             },

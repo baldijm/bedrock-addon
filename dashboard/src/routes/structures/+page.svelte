@@ -38,6 +38,7 @@
 		rotation: string;
 		mirror: string;
 		mode: 'instant' | 'layers';
+		includeBlocks: boolean;
 		includeAir: boolean;
 		protectBlocks: boolean;
 		anchor: StructureAnchor;
@@ -71,6 +72,7 @@
 	let rotation = $state('0_degrees');
 	let mirror = $state('none');
 	let placementMode = $state<'instant' | 'layers'>('instant');
+	let includeBlocks = $state(true);
 	let includeAir = $state(true);
 	let protectBlocks = $state(false);
 	let anchor = $state<StructureAnchor>('center');
@@ -339,6 +341,7 @@
 			rotation,
 			mirror,
 			mode: placementMode,
+			includeBlocks,
 			includeAir,
 			protectBlocks,
 			anchor,
@@ -708,28 +711,42 @@
 				</div>
 				<div class="flex items-center justify-between gap-4 rounded-md border p-4 md:col-span-3">
 					<div class="grid gap-1">
-						<Label for="include-air">Incluir aire</Label>
+						<Label for="include-blocks">Colocar bloques</Label>
 						<p class="text-sm text-muted-foreground">
-							{includeAir
-								? 'Los huecos de la estructura reemplazan los bloques existentes.'
-								: 'Los huecos se conservan: sólo se colocan los bloques reales de la estructura.'}
+							{includeBlocks
+								? 'Sí. Se cargarán los bloques guardados en la estructura.'
+								: 'No. Sólo se cargarán las entidades guardadas; el terreno permanecerá intacto.'}
 						</p>
 					</div>
-					<Switch id="include-air" bind:checked={includeAir} aria-label="Incluir aire" />
+					<Switch id="include-blocks" bind:checked={includeBlocks} aria-label="Colocar bloques" />
+				</div>
+				<div class="flex items-center justify-between gap-4 rounded-md border p-4 md:col-span-3">
+					<div class="grid gap-1">
+						<Label for="include-air">Incluir aire</Label>
+						<p class="text-sm text-muted-foreground">
+							{includeBlocks
+								? includeAir
+									? 'Los huecos de la estructura reemplazan los bloques existentes.'
+									: 'Los huecos se conservan: sólo se colocan los bloques reales de la estructura.'
+								: 'No aplica porque esta carga no colocará bloques.'}
+						</p>
+					</div>
+					<Switch id="include-air" bind:checked={includeAir} disabled={!includeBlocks} aria-label="Incluir aire" />
 				</div>
 				<div class="flex items-center justify-between gap-4 rounded-md border p-4 md:col-span-3">
 					<div class="grid gap-1">
 						<Label for="protect-blocks">Bloques se rompen</Label>
 						<p class="text-sm text-muted-foreground">
-							{protectBlocks
+							{includeBlocks && protectBlocks
 								? 'No. SPB protegerá toda la huella contra minería de jugadores y explosiones.'
 								: 'Sí. Esta colocación no tendrá protección de bloques.'}
 						</p>
 					</div>
 					<Switch
 						id="protect-blocks"
-						checked={!protectBlocks}
+						checked={includeBlocks && !protectBlocks}
 						onCheckedChange={(checked) => (protectBlocks = !checked)}
+						disabled={!includeBlocks}
 						aria-label="Bloques se rompen"
 					/>
 				</div>
@@ -746,10 +763,12 @@
 								'layers'
 									? 'capa por capa durante 12 segundos'
 									: 'instantáneo'}.
-								{pendingPlacement.includeAir
+								{pendingPlacement.includeBlocks
+									? pendingPlacement.includeAir
 									? ' Los huecos sí reemplazarán el terreno existente.'
-									: ' Los huecos conservarán el terreno existente.'}
-								{pendingPlacement.protectBlocks
+									: ' Los huecos conservarán el terreno existente.'
+									: ' Esta carga no modificará bloques.'}
+								{pendingPlacement.includeBlocks && pendingPlacement.protectBlocks
 									? ' Los bloques de esta colocación quedarán protegidos.'
 									: ' Sus bloques podrán romperse normalmente.'}
 							</p>

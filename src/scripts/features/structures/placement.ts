@@ -26,6 +26,7 @@ type PlacementRequest = {
   rotation: keyof typeof ROTATIONS;
   mirror: keyof typeof MIRRORS;
   mode: keyof typeof PLACEMENT_MODES;
+  includeBlocks: boolean;
   includeAir: boolean;
   protectBlocks: boolean;
 };
@@ -103,12 +104,15 @@ function parseRequest(message: string): PlacementRequest {
     rotation: input.rotation as PlacementRequest['rotation'],
     mirror: input.mirror as PlacementRequest['mirror'],
     mode: input.mode as PlacementRequest['mode'],
+    // Old bridge requests predate these fields. They intentionally keep the
+    // native behavior: blocks and air in the template replace the destination.
+    includeBlocks: input.includeBlocks !== false,
     // Old bridge requests predate this field. They intentionally keep the
     // native behavior: air in the template replaces the destination.
     includeAir: input.includeAir !== false,
     // Older requests retain their previous behavior: no protection unless the
     // dashboard explicitly requested it.
-    protectBlocks: input.protectBlocks === true
+    protectBlocks: input.protectBlocks === true && input.includeBlocks !== false
   };
   if (parsed.minX > parsed.maxX || parsed.minZ > parsed.maxZ) {
     throw new Error('la huella de la estructura no es válida');
@@ -232,9 +236,9 @@ async function placeAfterLoading(message: string): Promise<void> {
 
     await world.tickingAreaManager.createTickingArea(areaId, options);
     const placement = PLACEMENT_MODES[request.mode];
-    const before = new Map(snapshot(dimension, request));
+    const before = request.includeBlocks ? new Map(snapshot(dimension, request)) : undefined;
     let structure: string = request.structure;
-    if (!request.includeAir) {
+    if (request.includeBlocks && !request.includeAir) {
       const noAir = makeNoAirVariant(request);
       transientStructure = noAir.identifier;
       await noAir.complete;
@@ -249,7 +253,7 @@ async function placeAfterLoading(message: string): Promise<void> {
         ...(placement.animationSeconds > 0
           ? { animationSeconds: placement.animationSeconds }
           : {}),
-        includeBlocks: true,
+        includeBlocks: request.includeBlocks,
         includeEntities: true,
         integrity: 1,
         mirror: MIRRORS[request.mirror],
@@ -271,7 +275,9 @@ async function placeAfterLoading(message: string): Promise<void> {
     // An instant placement still needs a tick window for Bedrock's native
     // queue. Keep the temporary area alive while checking the world changed.
     await system.waitTicks(Math.max(40, placement.animationSeconds * 20 + 2));
-    const changed = snapshot(dimension, request).some(([key, state]) => before.get(key) !== state);
+    // Entity-only loads deliberately leave the world blocks unchanged, so a
+    // block snapshot cannot be used as their completion signal.
+    const changed = !before || snapshot(dimension, request).some(([key, state]) => before.get(key) !== state);
     if (!changed) {
       marker(
         request.request,
