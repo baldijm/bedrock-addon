@@ -46,6 +46,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		) as StructureRotation;
 		const mirror = (MIRRORS.has(body.mirror) ? body.mirror : 'none') as StructureMirror;
 		const mode = PLACEMENT_MODES.has(body.mode) ? body.mode : 'instant';
+		const includeAir = body.includeAir !== false;
 		const anchor = (ANCHORS.has(body.anchor) ? body.anchor : 'center') as StructureAnchor;
 		if (body.confirmed !== true) throw new Error('Confirma la colocación antes de continuar.');
 		const stored = await describeStoredStructure(name);
@@ -100,6 +101,7 @@ export const POST: RequestHandler = async ({ request }) => {
 					rotation,
 					mirror,
 					mode,
+					includeAir,
 					dimensions: structure.dimensions
 				})
 			});

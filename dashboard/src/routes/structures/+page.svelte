@@ -13,6 +13,7 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Slider } from '#lib/components/ui/slider/index.js';
+	import { Switch } from '#lib/components/ui/switch/index.js';
 	import {
 		resolveStructureOrigin,
 		type StructureAnchor,
@@ -37,6 +38,7 @@
 		rotation: string;
 		mirror: string;
 		mode: 'instant' | 'layers';
+		includeAir: boolean;
 		anchor: StructureAnchor;
 		origin: { x: number; y: number; z: number };
 	};
@@ -68,6 +70,7 @@
 	let rotation = $state('0_degrees');
 	let mirror = $state('none');
 	let placementMode = $state<'instant' | 'layers'>('instant');
+	let includeAir = $state(true);
 	let anchor = $state<StructureAnchor>('center');
 	let pendingPlacement = $state<PendingPlacement | null>(null);
 	let fileInput: HTMLInputElement;
@@ -334,6 +337,7 @@
 			rotation,
 			mirror,
 			mode: placementMode,
+			includeAir,
 			anchor,
 			origin
 		};
@@ -699,6 +703,17 @@
 							puede tardar un momento adicional en dibujar los chunks.
 						</p>{/if}
 				</div>
+				<div class="flex items-center justify-between gap-4 rounded-md border p-4 md:col-span-3">
+					<div class="grid gap-1">
+						<Label for="include-air">Incluir aire</Label>
+						<p class="text-sm text-muted-foreground">
+							{includeAir
+								? 'Los huecos de la estructura reemplazan los bloques existentes.'
+								: 'Los huecos se conservan: sólo se colocan los bloques reales de la estructura.'}
+						</p>
+					</div>
+					<Switch id="include-air" bind:checked={includeAir} aria-label="Incluir aire" />
+				</div>
 				{#if pendingPlacement}<div
 						class="grid gap-3 rounded-md border border-destructive/50 bg-destructive/5 p-4 md:col-span-3"
 					>
@@ -712,6 +727,9 @@
 								'layers'
 									? 'capa por capa durante 12 segundos'
 									: 'instantáneo'}.
+								{pendingPlacement.includeAir
+									? ' Los huecos sí reemplazarán el terreno existente.'
+									: ' Los huecos conservarán el terreno existente.'}
 							</p>
 						</div>
 						<div class="flex flex-wrap gap-2">

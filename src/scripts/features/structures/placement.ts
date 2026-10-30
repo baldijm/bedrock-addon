@@ -3,9 +3,11 @@ import {
   StructureAnimationMode,
   StructureMirrorAxis,
   StructureRotation,
+  StructureSaveMode,
   system,
   world
 } from '@minecraft/server';
+import type { BlockPermutation } from '@minecraft/server';
 
 type PlacementRequest = {
   request: string;
@@ -23,6 +25,7 @@ type PlacementRequest = {
   rotation: keyof typeof ROTATIONS;
   mirror: keyof typeof MIRRORS;
   mode: keyof typeof PLACEMENT_MODES;
+  includeAir: boolean;
 };
 
 const ROTATIONS = {
@@ -97,7 +100,10 @@ function parseRequest(message: string): PlacementRequest {
     depth: integer(input.depth, 'profundidad'),
     rotation: input.rotation as PlacementRequest['rotation'],
     mirror: input.mirror as PlacementRequest['mirror'],
-    mode: input.mode as PlacementRequest['mode']
+    mode: input.mode as PlacementRequest['mode'],
+    // Old bridge requests predate this field. They intentionally keep the
+    // native behavior: air in the template replaces the destination.
+    includeAir: input.includeAir !== false
   };
   if (parsed.minX > parsed.maxX || parsed.minZ > parsed.maxZ) {
     throw new Error('la huella de la estructura no es válida');
@@ -152,9 +158,57 @@ function snapshot(dimension: ReturnType<typeof world.getDimension>, request: Pla
   return [...locations.entries()].map(([key, location]) => [key, blockState(dimension, location)] as const);
 }
 
+function isAir(permutation: BlockPermutation | undefined) {
+  return !permutation || permutation.type.id.endsWith(':air');
+}
+
+/**
+ * Bedrock does not expose an "include air" placement flag. A missing block in
+ * a Structure is its equivalent of a structure void: loading it preserves the
+ * block already in the world. Make a memory-only copy and turn air cells into
+ * missing cells, so the pack structure and the player's library remain intact.
+ */
+function makeNoAirVariant(request: PlacementRequest) {
+  const source = world.structureManager.get(request.structure);
+  if (!source) throw new Error(`no existe la estructura ${request.structure}`);
+  const identifier = `spb:placement_no_air_${request.request}`;
+  const variant = source.saveAs(identifier, StructureSaveMode.Memory);
+
+  return {
+    identifier,
+    variant,
+    complete: new Promise<void>((resolve, reject) => {
+      function* removeAir() {
+        try {
+          let inspected = 0;
+          for (let y = 0; y < request.height; y += 1) {
+            for (let z = 0; z < request.depth; z += 1) {
+              for (let x = 0; x < request.width; x += 1) {
+                const location = { x, y, z };
+                if (isAir(variant.getBlockPermutation(location))) {
+                  variant.setBlockPermutation(location, undefined);
+                }
+                // Large templates can contain millions of cells. Yield often
+                // enough to keep the script watchdog and the server responsive.
+                inspected += 1;
+                if (inspected % 256 === 0) yield;
+              }
+            }
+          }
+          resolve();
+        } catch (error: unknown) {
+          reject(error);
+        }
+      }
+      system.runJob(removeAir());
+    })
+  };
+}
+
 async function placeAfterLoading(message: string): Promise<void> {
   let requestId = 'unknown';
   let areaId: string | undefined;
+  let transientStructure: string | undefined;
   try {
     const request = parseRequest(message);
     requestId = request.request;
@@ -174,8 +228,15 @@ async function placeAfterLoading(message: string): Promise<void> {
     await world.tickingAreaManager.createTickingArea(areaId, options);
     const placement = PLACEMENT_MODES[request.mode];
     const before = new Map(snapshot(dimension, request));
+    let structure: string = request.structure;
+    if (!request.includeAir) {
+      const noAir = makeNoAirVariant(request);
+      transientStructure = noAir.identifier;
+      await noAir.complete;
+      structure = noAir.variant.id;
+    }
     world.structureManager.place(
-      request.structure,
+      structure,
       dimension,
       { x: request.x, y: request.y, z: request.z },
       {
@@ -206,6 +267,13 @@ async function placeAfterLoading(message: string): Promise<void> {
   } catch (error: unknown) {
     marker(requestId, 'ERROR', error instanceof Error ? error.message : String(error));
   } finally {
+    if (transientStructure) {
+      try {
+        world.structureManager.delete(transientStructure);
+      } catch (error: unknown) {
+        console.warn(`SPB_STRUCTURE_PLACE_CLEANUP ${transientStructure} ${String(error)}`);
+      }
+    }
     if (areaId && world.tickingAreaManager.hasTickingArea(areaId)) {
       try {
         world.tickingAreaManager.removeTickingArea(areaId);
