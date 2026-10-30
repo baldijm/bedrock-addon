@@ -39,6 +39,7 @@ STRUCTURE_PLACEMENT_TIMEOUT_SECONDS = 90
 STRUCTURE_EXTRACT_TIMEOUT_SECONDS = 90
 MAX_STRUCTURE_BYTES = 20 * 1024 * 1024
 MAX_IMPORTED_STRUCTURE_BYTES = 150 * 1024 * 1024
+MULTIPART_STRUCTURE_PART_BYTES = 10 * 1024 * 1024
 STRUCTURE_EXPORT_DIRECTORY = Path("/var/lib/spb/structure-exports")
 SERVER_PROPERTIES_FILE = "server.properties"
 WORLD_RESET_REQUESTS = Path("/var/lib/spb/staging-world-reset/requests")
@@ -72,6 +73,9 @@ GAMERULE_PATTERNS = {
 }
 STRUCTURE_ID_PATTERN = re.compile(
     r"^(?P<namespace>[a-z0-9][a-z0-9_.-]{0,31}):(?P<name>[a-z0-9][a-z0-9_./-]{0,95})$"
+)
+STRUCTURE_UPLOAD_ID_PATTERN = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 )
 STRUCTURE_LOADED_PATTERN = re.compile(r"Loaded a structure of name\s+(?P<identifier>[^\s]+)", re.IGNORECASE)
 
@@ -336,6 +340,7 @@ class BedrockConsoleBridge:
         self.process: subprocess.Popen[str] | None = None
         self._stdin_lock = threading.Lock()
         self._query_lock = threading.Lock()
+        self._structure_import_lock = threading.Lock()
         self._lifecycle_lock = threading.RLock()
         self._stop_requested = False
         self._desired_running = False
@@ -598,6 +603,92 @@ class BedrockConsoleBridge:
         finally:
             temporary.unlink(missing_ok=True)
         return {"ok": True, "structure": identifier, "size": written}
+
+    def _multipart_structure_target(
+        self, structure_id: object, upload_id: object
+    ) -> tuple[str, Path, Path, Path]:
+        """Return validated final and temporary paths for a multipart import."""
+        identifier, namespace, name = validate_structure_id(structure_id)
+        if not isinstance(upload_id, str) or not STRUCTURE_UPLOAD_ID_PATTERN.fullmatch(upload_id):
+            raise ValueError("La sesión de importación no es válida.")
+        structures = self.root / "behavior_packs" / "SPB_BP" / "structures"
+        if structures.exists() and structures.is_symlink():
+            raise RuntimeError("La carpeta de estructuras no es válida.")
+        directory = structures / namespace
+        directory.mkdir(mode=0o750, parents=True, exist_ok=True)
+        if directory.is_symlink():
+            raise RuntimeError("La carpeta de estructuras no es válida.")
+        target = (directory / f"{name}.mcstructure").resolve()
+        temporary = (directory / f".{name}.{upload_id}.upload").resolve()
+        resolved_directory = directory.resolve()
+        if target.parent != resolved_directory or temporary.parent != resolved_directory:
+            raise ValueError("El identificador de estructura no es seguro.")
+        return identifier, directory, target, temporary
+
+    def import_structure_part(
+        self, structure_id: object, upload_id: object, stream: Any, total: int, offset: int, size: int
+    ) -> dict[str, str | int]:
+        """Append one bounded Worker-to-bridge chunk without exposing a partial file."""
+        if not 1 <= total <= MAX_IMPORTED_STRUCTURE_BYTES:
+            raise ValueError("La estructura debe medir entre 1 byte y 150 MiB.")
+        if offset < 0 or offset >= total:
+            raise ValueError("El desplazamiento de la parte no es válido.")
+        expected = min(MULTIPART_STRUCTURE_PART_BYTES, total - offset)
+        if size != expected:
+            raise ValueError("La parte no tiene el tamaño esperado.")
+        identifier, _directory, _target, temporary = self._multipart_structure_target(
+            structure_id, upload_id
+        )
+        with self._structure_import_lock:
+            if offset == 0:
+                if temporary.exists():
+                    temporary.unlink()
+                if temporary.is_symlink():
+                    raise RuntimeError("El archivo temporal no es válido.")
+                mode = "xb"
+            else:
+                if temporary.is_symlink() or not temporary.is_file():
+                    raise ValueError("No existe la primera parte de esta estructura.")
+                if temporary.stat().st_size != offset:
+                    raise ValueError("Las partes de la estructura llegaron fuera de orden.")
+                mode = "ab"
+            written = 0
+            try:
+                with temporary.open(mode) as output:
+                    while written < size:
+                        chunk = stream.read(min(64 * 1024, size - written))
+                        if not chunk:
+                            raise ValueError("La carga de una parte quedó incompleta.")
+                        output.write(chunk)
+                        written += len(chunk)
+                    output.flush()
+                    os.fsync(output.fileno())
+            except Exception:
+                temporary.unlink(missing_ok=True)
+                raise
+        return {"ok": True, "structure": identifier, "received": offset + written, "size": total}
+
+    def complete_structure_import(
+        self, structure_id: object, upload_id: object, total: int
+    ) -> dict[str, str | int]:
+        """Atomically reveal a multipart structure only after every byte arrived."""
+        if not 1 <= total <= MAX_IMPORTED_STRUCTURE_BYTES:
+            raise ValueError("La estructura debe medir entre 1 byte y 150 MiB.")
+        identifier, _directory, target, temporary = self._multipart_structure_target(structure_id, upload_id)
+        with self._structure_import_lock:
+            if temporary.is_symlink() or not temporary.is_file() or temporary.stat().st_size != total:
+                raise ValueError("La estructura temporal está incompleta.")
+            os.chmod(temporary, 0o640)
+            os.replace(temporary, target)
+        return {"ok": True, "structure": identifier, "size": total}
+
+    def abort_structure_import(self, structure_id: object, upload_id: object) -> dict[str, str | bool]:
+        identifier, _directory, _target, temporary = self._multipart_structure_target(structure_id, upload_id)
+        with self._structure_import_lock:
+            if temporary.is_symlink():
+                raise RuntimeError("El archivo temporal no es válido.")
+            temporary.unlink(missing_ok=True)
+        return {"ok": True, "structure": identifier}
 
     def materialized_structure(self, structure_id: object, expected_size: object) -> dict[str, str | int | bool]:
         """Confirm the exact local artifact after a streamed R2 upload.
@@ -960,7 +1051,19 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
         if not self._require_authorization():
             return
         path = urlparse(self.path).path
-        if path not in {"/commands", "/properties", "/gamerules", "/world/reset", "/updates", "/structures/export", "/structures/import", "/structures/place"}:
+        if path not in {
+            "/commands",
+            "/properties",
+            "/gamerules",
+            "/world/reset",
+            "/updates",
+            "/structures/export",
+            "/structures/import",
+            "/structures/import-part",
+            "/structures/import-complete",
+            "/structures/import-abort",
+            "/structures/place",
+        }:
             self._send_json(HTTPStatus.NOT_FOUND, {"error": "No existe esa ruta."})
             return
         try:
@@ -975,6 +1078,46 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
                         self.headers.get("X-SPB-Structure-Id"), self.rfile, length
                     ),
                 )
+            except (OSError, ValueError) as error:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+            except RuntimeError as error:
+                self._send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": str(error)})
+            return
+        if path == "/structures/import-part":
+            try:
+                total = int(self.headers.get("X-SPB-Structure-Size", "0"))
+                offset = int(self.headers.get("X-SPB-Structure-Offset", "-1"))
+                self._send_json(
+                    HTTPStatus.OK,
+                    self.bridge_server.bridge.import_structure_part(
+                        self.headers.get("X-SPB-Structure-Id"),
+                        self.headers.get("X-SPB-Structure-Upload-Id"),
+                        self.rfile,
+                        total,
+                        offset,
+                        length,
+                    ),
+                )
+            except (OSError, ValueError) as error:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+            except RuntimeError as error:
+                self._send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": str(error)})
+            return
+        if path in {"/structures/import-complete", "/structures/import-abort"}:
+            try:
+                total = int(self.headers.get("X-SPB-Structure-Size", "0"))
+                if path == "/structures/import-complete":
+                    result = self.bridge_server.bridge.complete_structure_import(
+                        self.headers.get("X-SPB-Structure-Id"),
+                        self.headers.get("X-SPB-Structure-Upload-Id"),
+                        total,
+                    )
+                else:
+                    result = self.bridge_server.bridge.abort_structure_import(
+                        self.headers.get("X-SPB-Structure-Id"),
+                        self.headers.get("X-SPB-Structure-Upload-Id"),
+                    )
+                self._send_json(HTTPStatus.OK, result)
             except (OSError, ValueError) as error:
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
             except RuntimeError as error:

@@ -218,6 +218,23 @@ export async function readStoredStructure(name: unknown) {
 	return { entry, object };
 }
 
+/** Read one bounded range so an R2 structure can be relayed through a limited upstream. */
+export async function readStoredStructurePart(name: unknown, offset: number, length: number) {
+	const entry = await storedStructure(name);
+	if (!entry) return null;
+	if (
+		!Number.isSafeInteger(offset) ||
+		!Number.isSafeInteger(length) ||
+		offset < 0 ||
+		length < 1 ||
+		offset + length > entry.size
+	)
+		throw new Error('El rango de la estructura no es válido.');
+	const object = await env.STRUCTURES.get(entry.objectKey, { range: { offset, length } });
+	if (!object) throw new Error('La versión registrada no existe en R2.');
+	return { entry, object };
+}
+
 export async function describeStoredStructure(name: unknown) {
 	return storedStructure(name);
 }

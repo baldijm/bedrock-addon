@@ -1,8 +1,10 @@
 import type { RequestHandler } from './$types';
 import { isAuthenticated, json, unauthorized } from '#lib/server/auth';
-import { consoleBridgeRequest, consoleBridgeStreamRequest } from '#lib/server/bridge';
-import { listStoredStructures, readStoredStructure } from '#lib/server/structure-library';
+import { consoleBridgeRequest } from '#lib/server/bridge';
+import { listStoredStructures, readStoredStructurePart } from '#lib/server/structure-library';
 import { resolveEnvironment } from '#lib/server/environment';
+
+const BRIDGE_PART_BYTES = 10 * 1024 * 1024;
 
 /** Synchronize R2 templates before the staging-only Bedrock restart that indexes them. */
 export const POST: RequestHandler = async ({ request }) => {
@@ -12,18 +14,52 @@ export const POST: RequestHandler = async ({ request }) => {
 	try {
 		const structures = await listStoredStructures();
 		for (const entry of structures) {
-			const stored = await readStoredStructure(entry.name);
-			if (!stored) throw new Error(`La estructura ${entry.name} ya no está disponible en R2.`);
-			await consoleBridgeStreamRequest('staging', '/structures/import', {
-				method: 'POST',
-				headers: {
-					'content-type': 'application/octet-stream',
-					'content-length': String(stored.entry.size),
-					'x-spb-structure-id': `spb:${entry.name}`,
-					'x-spb-structure-etag': stored.entry.etag
-				},
-				body: stored.object.body
-			});
+			const structureId = `spb:${entry.name}`;
+			const uploadId = crypto.randomUUID();
+			try {
+				for (let offset = 0; offset < entry.size; offset += BRIDGE_PART_BYTES) {
+					const length = Math.min(BRIDGE_PART_BYTES, entry.size - offset);
+					const stored = await readStoredStructurePart(entry.name, offset, length);
+					if (!stored) throw new Error(`La estructura ${entry.name} ya no está disponible en R2.`);
+					const bytes = new Uint8Array(await stored.object.arrayBuffer());
+					if (bytes.byteLength !== length)
+						throw new Error(`La estructura ${entry.name} no devolvió la parte completa.`);
+					await consoleBridgeRequest('staging', '/structures/import-part', {
+						method: 'POST',
+						headers: {
+							'content-type': 'application/octet-stream',
+							'content-length': String(length),
+							'x-spb-structure-id': structureId,
+							'x-spb-structure-upload-id': uploadId,
+							'x-spb-structure-size': String(entry.size),
+							'x-spb-structure-offset': String(offset)
+						},
+						body: bytes
+					});
+				}
+				await consoleBridgeRequest('staging', '/structures/import-complete', {
+					method: 'POST',
+					headers: {
+						'x-spb-structure-id': structureId,
+						'x-spb-structure-upload-id': uploadId,
+						'x-spb-structure-size': String(entry.size)
+					}
+				});
+			} catch (error) {
+				try {
+					await consoleBridgeRequest('staging', '/structures/import-abort', {
+						method: 'POST',
+						headers: {
+							'x-spb-structure-id': structureId,
+							'x-spb-structure-upload-id': uploadId,
+							'x-spb-structure-size': String(entry.size)
+						}
+					});
+				} catch {
+					// Preserve the original transfer error; a later retry uses a different temporary file.
+				}
+				throw error;
+			}
 		}
 		// The staging bridge owns Bedrock and starts it again after `stop`.
 		await consoleBridgeRequest('staging', '/commands', {
