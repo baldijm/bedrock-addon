@@ -474,12 +474,12 @@
 							id="upload-limit"
 							type="single"
 							min={1}
-							max={100}
+							max={150}
 							step={1}
 							bind:value={uploadLimitMiB}
 						/>
 						<div class="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-							<span>1 MiB</span><span>100 MiB</span>
+							<span>1 MiB</span><span>150 MiB</span>
 						</div>
 						<Button
 							size="sm"

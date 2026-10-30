@@ -38,7 +38,7 @@ STRUCTURE_COMMAND_TIMEOUT_SECONDS = 45
 STRUCTURE_PLACEMENT_TIMEOUT_SECONDS = 90
 STRUCTURE_EXTRACT_TIMEOUT_SECONDS = 90
 MAX_STRUCTURE_BYTES = 20 * 1024 * 1024
-MAX_IMPORTED_STRUCTURE_BYTES = 100 * 1024 * 1024
+MAX_IMPORTED_STRUCTURE_BYTES = 150 * 1024 * 1024
 STRUCTURE_EXPORT_DIRECTORY = Path("/var/lib/spb/structure-exports")
 SERVER_PROPERTIES_FILE = "server.properties"
 WORLD_RESET_REQUESTS = Path("/var/lib/spb/staging-world-reset/requests")
@@ -559,7 +559,7 @@ class BedrockConsoleBridge:
         """
         identifier, namespace, name = validate_structure_id(structure_id)
         if not 1 <= size <= MAX_IMPORTED_STRUCTURE_BYTES:
-            raise ValueError("La estructura debe medir entre 1 byte y 100 MiB.")
+            raise ValueError("La estructura debe medir entre 1 byte y 150 MiB.")
         properties = parse_server_properties(self.root / SERVER_PROPERTIES_FILE)
         world_name = properties.get("level-name", "")
         if not world_name or world_name in {".", ".."} or "/" in world_name or "\\" in world_name:

@@ -7,7 +7,7 @@ import {
 } from '#lib/server/structures';
 
 export const MIN_STRUCTURE_UPLOAD_BYTES = 1 * 1024 * 1024;
-export const MAX_STRUCTURE_UPLOAD_BYTES = 100 * 1024 * 1024;
+export const MAX_STRUCTURE_UPLOAD_BYTES = 150 * 1024 * 1024;
 export const DEFAULT_STRUCTURE_UPLOAD_BYTES = 20 * 1024 * 1024;
 
 export type StoredStructure = {
@@ -70,9 +70,9 @@ export async function setStructureUploadLimit(mebibytes: unknown) {
 		typeof mebibytes !== 'number' ||
 		!Number.isInteger(mebibytes) ||
 		mebibytes < 1 ||
-		mebibytes > 100
+		mebibytes > 150
 	)
-		throw new Error('El límite debe ser un número entero entre 1 y 100 MiB.');
+		throw new Error('El límite debe ser un número entero entre 1 y 150 MiB.');
 	const bytes = mebibytes * 1024 * 1024;
 	await database()
 		.prepare(
