@@ -51,6 +51,9 @@
 	let loading = $state(true);
 	let exporting = $state(false);
 	let importing = $state(false);
+	let importProgress = $state<number | null>(null);
+	let importPhase = $state<'uploading' | 'publishing' | null>(null);
+	let importFileSize = $state(0);
 	let activating = $state(false);
 	let activationNeeded = $state(false);
 	let staticSource = $state('');
@@ -77,8 +80,9 @@
 	let protectBlocks = $state(false);
 	let anchor = $state<StructureAnchor>('center');
 	let pendingPlacement = $state<PendingPlacement | null>(null);
-	let fileInput: HTMLInputElement;
+	let fileInput = $state<HTMLInputElement | undefined>(undefined);
 	let selectedFiles = $state<FileList | undefined>(undefined);
+	let activeImport: XMLHttpRequest | null = null;
 	let environment = $state<'staging' | 'production'>('staging');
 
 	function activeEnvironment() {
@@ -168,24 +172,47 @@
 			return;
 		}
 		importing = true;
+		importProgress = 0;
+		importPhase = 'uploading';
+		importFileSize = file.size;
 		try {
-			const response = await fetch(`/api/structures?name=${encodeURIComponent(target)}`, {
-				method: 'POST',
-				headers: {
-					'content-type': 'application/octet-stream',
-					'x-spb-structure-size': String(file.size)
-				},
-				body: file
+			const response = await new Promise<{ status: number; body: unknown }>((resolve, reject) => {
+				const upload = new XMLHttpRequest();
+				activeImport = upload;
+				upload.open('POST', `/api/structures?name=${encodeURIComponent(target)}`);
+				upload.setRequestHeader('content-type', 'application/octet-stream');
+				upload.setRequestHeader('x-spb-structure-size', String(file.size));
+				upload.upload.onprogress = (event) => {
+					if (!event.lengthComputable) return;
+					importProgress = Math.min(100, Math.round((event.loaded / event.total) * 100));
+				};
+				upload.upload.onload = () => {
+					importProgress = 100;
+					importPhase = 'publishing';
+				};
+				upload.onerror = () => reject(new Error('La conexión se interrumpió durante la carga.'));
+				upload.onabort = () => reject(new Error('La carga fue cancelada.'));
+				upload.onload = () => {
+					let body: unknown = {};
+					try {
+						body = JSON.parse(upload.responseText);
+					} catch {
+						// The status below still supplies a useful generic error.
+					}
+					resolve({ status: upload.status, body });
+				};
+				upload.send(file);
 			});
-			const body = (await response.json().catch(() => ({}))) as {
+			const body = response.body as {
 				error?: string;
 				name?: string;
 				deployment?: string;
 			};
-			if (!response.ok) throw new Error(body.error ?? 'No se pudo importar.');
+			if (response.status < 200 || response.status >= 300)
+				throw new Error(body.error ?? 'No se pudo importar.');
 			toast.success(`Archivo ${body.name} publicado`, { description: body.deployment });
 			activationNeeded = true;
-			fileInput.value = '';
+			if (fileInput) fileInput.value = '';
 			selectedFiles = new DataTransfer().files;
 			await load();
 		} catch (reason) {
@@ -194,7 +221,15 @@
 			});
 		} finally {
 			importing = false;
+			importProgress = null;
+			importPhase = null;
+			importFileSize = 0;
+			activeImport = null;
 		}
+	}
+
+	function cancelImport() {
+		activeImport?.abort();
 	}
 
 	async function activateStagingStructures() {
@@ -202,7 +237,10 @@
 		activating = true;
 		try {
 			const response = await fetch('/api/structures/activate', { method: 'POST' });
-			const body = (await response.json().catch(() => ({}))) as { error?: string; structures?: number };
+			const body = (await response.json().catch(() => ({}))) as {
+				error?: string;
+				structures?: number;
+			};
 			if (!response.ok) throw new Error(body.error ?? 'No se pudo activar la biblioteca.');
 			activationNeeded = false;
 			toast.success('Activación de Staging iniciada', {
@@ -502,6 +540,35 @@
 							accept=".mcstructure,application/octet-stream"
 						/>
 					</div>
+					{#if importing && importProgress !== null}<div class="grid gap-2 rounded-md border p-3">
+							<div class="flex items-center justify-between gap-3 text-sm">
+								<span class="font-medium"
+									>{importPhase === 'uploading'
+										? 'Subiendo archivo'
+										: 'Verificando y publicando en R2'}</span
+								>
+								<span class="tabular-nums">{importProgress}%</span>
+							</div>
+							<div
+								class="h-2 overflow-hidden rounded-full bg-muted"
+								role="progressbar"
+								aria-label="Progreso de carga"
+								aria-valuemin="0"
+								aria-valuemax="100"
+								aria-valuenow={importProgress}
+							>
+								<div
+									class="h-full bg-primary transition-[width]"
+									style={`width: ${importProgress}%`}
+								></div>
+							</div>
+							<p class="text-xs text-muted-foreground">
+								{importPhase === 'uploading'
+									? `${formatSize(Math.round((importFileSize * importProgress) / 100))} de ${formatSize(importFileSize)} enviados.`
+									: 'El archivo llegó al servidor; se está validando y guardando antes de aparecer en la biblioteca.'}
+							</p>
+							<Button size="sm" variant="outline" onclick={cancelImport}>Cancelar carga</Button>
+						</div>{/if}
 					<div class="grid gap-2">
 						<Label for="upload-name">Nombre en biblioteca SPB</Label><Input
 							id="upload-name"
@@ -525,71 +592,97 @@
 			>
 		</section>
 		{#if environment === 'staging' && activationNeeded}<Alert.Root>
-			<PackagePlus />
-			<Alert.Title>Activa las estructuras en Staging</Alert.Title>
-			<Alert.Description class="flex flex-wrap items-center justify-between gap-3">
-				<span>Bedrock sólo descubre archivos nuevos del behavior pack al arrancar. Esto sincroniza la biblioteca R2 y reinicia únicamente Staging.</span>
-				<Button size="sm" variant="outline" onclick={() => void activateStagingStructures()} disabled={activating}>
-					{#if activating}<LoaderCircle class="animate-spin" /> Activando…{:else}<PackagePlus /> Activar en Staging{/if}
-				</Button>
-			</Alert.Description>
-		</Alert.Root>{/if}
+				<PackagePlus />
+				<Alert.Title>Activa las estructuras en Staging</Alert.Title>
+				<Alert.Description class="flex flex-wrap items-center justify-between gap-3">
+					<span
+						>Bedrock sólo descubre archivos nuevos del behavior pack al arrancar. Esto sincroniza la
+						biblioteca R2 y reinicia únicamente Staging.</span
+					>
+					<Button
+						size="sm"
+						variant="outline"
+						onclick={() => void activateStagingStructures()}
+						disabled={activating}
+					>
+						{#if activating}<LoaderCircle class="animate-spin" /> Activando…{:else}<PackagePlus /> Activar
+							en Staging{/if}
+					</Button>
+				</Alert.Description>
+			</Alert.Root>{/if}
 		{#if environment === 'staging'}<Card.Root class="border-amber-500/30"
-			><Card.Header
-				><Card.Title>Crear variante sin gravedad</Card.Title><Card.Description
-					>Analiza una estructura de la biblioteca y crea una copia. Los bloques que selecciones se
-					reemplazan por sus equivalentes SPB estáticos; el archivo original nunca se modifica.</Card.Description
-				></Card.Header
-			><Card.Content class="grid gap-4"
-				><div class="grid gap-2">
-					<Label for="static-source">Estructura original</Label><select
-						id="static-source"
-						class="h-9 rounded-md border bg-background px-3 text-sm"
-						bind:value={staticSource}
-						onchange={() => {
-							staticCandidates = [];
-							staticBlocks = [];
-							staticTarget = staticSource ? `${staticSource}_static` : '';
-						}}
-						><option value="">Selecciona una estructura</option>{#each structures as structure}<option
-							value={structure.name}>spb:{structure.name}</option
-						>{/each}</select
-					>
-				</div>
-				<div class="flex flex-wrap gap-2">
-					<Button variant="outline" onclick={() => void analyzeStaticVariant()} disabled={!staticSource || analyzingStatic}
-						>{#if analyzingStatic}<LoaderCircle class="animate-spin" /> Analizando…{:else}Analizar bloques con gravedad{/if}</Button
-					>
-				</div>
-				{#if staticCandidates.length}<div class="grid gap-3 rounded-md border p-4">
-					<div class="grid gap-2">
-						<Label for="static-target">Nombre de la variante</Label><Input
-							id="static-target"
-							bind:value={staticTarget}
-							placeholder="finn_static"
-						/>
+				><Card.Header
+					><Card.Title>Crear variante sin gravedad</Card.Title><Card.Description
+						>Analiza una estructura de la biblioteca y crea una copia. Los bloques que selecciones
+						se reemplazan por sus equivalentes SPB estáticos; el archivo original nunca se modifica.</Card.Description
+					></Card.Header
+				><Card.Content class="grid gap-4"
+					><div class="grid gap-2">
+						<Label for="static-source">Estructura original</Label><select
+							id="static-source"
+							class="h-9 rounded-md border bg-background px-3 text-sm"
+							bind:value={staticSource}
+							onchange={() => {
+								staticCandidates = [];
+								staticBlocks = [];
+								staticTarget = staticSource ? `${staticSource}_static` : '';
+							}}
+							><option value="">Selecciona una estructura</option
+							>{#each structures as structure}<option value={structure.name}
+									>spb:{structure.name}</option
+								>{/each}</select
+						>
 					</div>
-					<p class="text-sm text-muted-foreground">
-						Selecciona los bloques que deben permanecer fijos en la copia.
-					</p>
-					<div class="grid gap-2 sm:grid-cols-2">
-						{#each staticCandidates as candidate}<label class="flex cursor-pointer items-start gap-3 rounded-md border p-3 text-sm">
-							<input
-								type="checkbox"
-								checked={staticBlocks.includes(candidate.id)}
-								onchange={(event) =>
-									toggleStaticBlock(candidate.id, (event.currentTarget as HTMLInputElement).checked)}
-							/>
-							<span><strong>{candidate.label}</strong><br /><code class="text-xs text-muted-foreground"
-								>{candidate.id} → {candidate.replacement}</code
-							></span>
-						</label>{/each}
+					<div class="flex flex-wrap gap-2">
+						<Button
+							variant="outline"
+							onclick={() => void analyzeStaticVariant()}
+							disabled={!staticSource || analyzingStatic}
+							>{#if analyzingStatic}<LoaderCircle class="animate-spin" /> Analizando…{:else}Analizar
+								bloques con gravedad{/if}</Button
+						>
 					</div>
-					<Button onclick={() => void createStaticVariant()} disabled={creatingStatic || !staticTarget.trim() || !staticBlocks.length}
-						>{#if creatingStatic}<LoaderCircle class="animate-spin" /> Creando copia…{:else}<PackagePlus /> Crear variante estática{/if}</Button
-					>
-				</div>{/if}</Card.Content
-		></Card.Root>{/if}
+					{#if staticCandidates.length}<div class="grid gap-3 rounded-md border p-4">
+							<div class="grid gap-2">
+								<Label for="static-target">Nombre de la variante</Label><Input
+									id="static-target"
+									bind:value={staticTarget}
+									placeholder="finn_static"
+								/>
+							</div>
+							<p class="text-sm text-muted-foreground">
+								Selecciona los bloques que deben permanecer fijos en la copia.
+							</p>
+							<div class="grid gap-2 sm:grid-cols-2">
+								{#each staticCandidates as candidate}<label
+										class="flex cursor-pointer items-start gap-3 rounded-md border p-3 text-sm"
+									>
+										<input
+											type="checkbox"
+											checked={staticBlocks.includes(candidate.id)}
+											onchange={(event) =>
+												toggleStaticBlock(
+													candidate.id,
+													(event.currentTarget as HTMLInputElement).checked
+												)}
+										/>
+										<span
+											><strong>{candidate.label}</strong><br /><code
+												class="text-xs text-muted-foreground"
+												>{candidate.id} → {candidate.replacement}</code
+											></span
+										>
+									</label>{/each}
+							</div>
+							<Button
+								onclick={() => void createStaticVariant()}
+								disabled={creatingStatic || !staticTarget.trim() || !staticBlocks.length}
+								>{#if creatingStatic}<LoaderCircle class="animate-spin" /> Creando copia…{:else}<PackagePlus
+									/> Crear variante estática{/if}</Button
+							>
+						</div>{/if}</Card.Content
+				></Card.Root
+			>{/if}
 		<Card.Root
 			><Card.Header
 				><Card.Title>Biblioteca versionada</Card.Title><Card.Description
@@ -731,7 +824,12 @@
 								: 'No aplica porque esta carga no colocará bloques.'}
 						</p>
 					</div>
-					<Switch id="include-air" bind:checked={includeAir} disabled={!includeBlocks} aria-label="Incluir aire" />
+					<Switch
+						id="include-air"
+						bind:checked={includeAir}
+						disabled={!includeBlocks}
+						aria-label="Incluir aire"
+					/>
 				</div>
 				<div class="flex items-center justify-between gap-4 rounded-md border p-4 md:col-span-3">
 					<div class="grid gap-1">
@@ -765,8 +863,8 @@
 									: 'instantáneo'}.
 								{pendingPlacement.includeBlocks
 									? pendingPlacement.includeAir
-									? ' Los huecos sí reemplazarán el terreno existente.'
-									: ' Los huecos conservarán el terreno existente.'
+										? ' Los huecos sí reemplazarán el terreno existente.'
+										: ' Los huecos conservarán el terreno existente.'
 									: ' Esta carga no modificará bloques.'}
 								{pendingPlacement.includeBlocks && pendingPlacement.protectBlocks
 									? ' Los bloques de esta colocación quedarán protegidos.'
