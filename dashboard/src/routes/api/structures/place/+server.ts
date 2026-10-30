@@ -2,11 +2,13 @@ import type { RequestHandler } from './$types';
 import { isAuthenticated, json, unauthorized } from '#lib/server/auth';
 import {
 	consoleBridgeRequest,
-	consoleBridgeStreamRequest,
 	type ServerEnvironment
 } from '#lib/server/bridge';
 import { describeStructure, validateStructureName } from '#lib/server/structures';
-import { describeStoredStructure, readStoredStructure } from '#lib/server/structure-library';
+import {
+	describeStoredStructure,
+	readStoredStructurePart
+} from '#lib/server/structure-library';
 import { resolveEnvironment } from '#lib/server/environment';
 import {
 	resolveStructureOrigin,
@@ -19,6 +21,65 @@ const ROTATIONS = new Set(['0_degrees', '90_degrees', '180_degrees', '270_degree
 const MIRRORS = new Set(['none', 'x', 'z', 'xz']);
 const ANCHORS = new Set(['center', 'origin']);
 const PLACEMENT_MODES = new Set(['instant', 'layers']);
+const BRIDGE_PART_BYTES = 10 * 1024 * 1024;
+
+async function ensureMaterializedInStaging(
+	name: string,
+	entry: { size: number }
+) {
+	const structureId = `spb:${name}`;
+	const alreadyMaterialized = (await consoleBridgeRequest(
+		'staging',
+		`/structures/materialized?structure=${encodeURIComponent(structureId)}&size=${entry.size}`
+	)) as { ok?: boolean };
+	if (alreadyMaterialized.ok) return;
+
+	const uploadId = crypto.randomUUID();
+	try {
+		for (let offset = 0; offset < entry.size; offset += BRIDGE_PART_BYTES) {
+			const length = Math.min(BRIDGE_PART_BYTES, entry.size - offset);
+			const storedPart = await readStoredStructurePart(name, offset, length);
+			if (!storedPart) throw new Error('La estructura de R2 ya no está disponible.');
+			const bytes = new Uint8Array(await storedPart.object.arrayBuffer());
+			if (bytes.byteLength !== length)
+				throw new Error('No se pudo leer una parte completa de la estructura.');
+			await consoleBridgeRequest('staging', '/structures/import-part', {
+				method: 'POST',
+				headers: {
+					'content-type': 'application/octet-stream',
+					'content-length': String(length),
+					'x-spb-structure-id': structureId,
+					'x-spb-structure-upload-id': uploadId,
+					'x-spb-structure-size': String(entry.size),
+					'x-spb-structure-offset': String(offset)
+				},
+				body: bytes
+			});
+		}
+		await consoleBridgeRequest('staging', '/structures/import-complete', {
+			method: 'POST',
+			headers: {
+				'x-spb-structure-id': structureId,
+				'x-spb-structure-upload-id': uploadId,
+				'x-spb-structure-size': String(entry.size)
+			}
+		});
+	} catch (error) {
+		try {
+			await consoleBridgeRequest('staging', '/structures/import-abort', {
+				method: 'POST',
+				headers: {
+					'x-spb-structure-id': structureId,
+					'x-spb-structure-upload-id': uploadId,
+					'x-spb-structure-size': String(entry.size)
+				}
+			});
+		} catch {
+			// Preserve the actual upload error.
+		}
+		throw error;
+	}
+}
 
 function coordinate(value: unknown, axis: string) {
 	if (
@@ -71,26 +132,7 @@ export const POST: RequestHandler = async ({ request }) => {
 					throw new Error(
 						'Esta estructura está en R2. Su colocación en producción se habilitará con el mantenimiento autorizado de ese bridge.'
 					);
-				const object = await readStoredStructure(name);
-				if (!object) throw new Error('La estructura de R2 ya no está disponible.');
-				try {
-					await consoleBridgeStreamRequest('staging', '/structures/import', {
-						method: 'POST',
-						headers: {
-							'content-type': 'application/octet-stream',
-							'content-length': String(object.entry.size),
-							'x-spb-structure-id': `spb:${name}`,
-							'x-spb-structure-etag': object.entry.etag
-						},
-						body: object.object.body
-					});
-				} catch (uploadError) {
-					const check = (await consoleBridgeRequest(
-						'staging',
-						`/structures/materialized?structure=${encodeURIComponent(`spb:${name}`)}&size=${object.entry.size}`
-					)) as { ok?: boolean };
-					if (!check.ok) throw uploadError;
-				}
+				await ensureMaterializedInStaging(name, stored);
 			}
 			result = await consoleBridgeRequest(environment, '/structures/place', {
 				method: 'POST',
