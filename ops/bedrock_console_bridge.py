@@ -652,6 +652,7 @@ class BedrockConsoleBridge:
         mirror = request.get("mirror", "none")
         mode = request.get("mode", "instant")
         include_air = request.get("includeAir", True)
+        protect_blocks = request.get("protectBlocks", False)
         if rotation not in {"0_degrees", "90_degrees", "180_degrees", "270_degrees"}:
             raise ValueError("La rotación no es válida.")
         if mirror not in {"none", "x", "z", "xz"}:
@@ -660,6 +661,8 @@ class BedrockConsoleBridge:
             raise ValueError("El modo de colocación no es válido.")
         if not isinstance(include_air, bool):
             raise ValueError("La opción de incluir aire no es válida.")
+        if not isinstance(protect_blocks, bool):
+            raise ValueError("La opción de proteger bloques no es válida.")
 
         corners = [(0, 0), (width - 1, 0), (0, depth - 1), (width - 1, depth - 1)]
         transformed: list[tuple[int, int]] = []
@@ -698,6 +701,7 @@ class BedrockConsoleBridge:
                 "mirror": mirror,
                 "mode": mode,
                 "includeAir": include_air,
+                "protectBlocks": protect_blocks,
             },
             separators=(",", ":"),
         )

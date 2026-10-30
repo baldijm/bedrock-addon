@@ -4,6 +4,7 @@ import { dispararEnergia, esTriggerGun } from '../features/combat/habilidades.js
 import { establecerCreativePlus, obtenerCreativePlus } from '../global/configuracion.js';
 import { actualizarResumenRanking, asegurarJugadorEnRanking } from '../global/ranking.js';
 import { abrirMenuPrincipal } from '../features/menu/menuPrincipal.js';
+import { isStructureProtected } from '../features/structures/protection.js';
 const TAG_OPERADOR = 'op';
 function esOperador(player) {
     return player.hasTag(TAG_OPERADOR);
@@ -63,6 +64,8 @@ world.afterEvents.itemUse.subscribe((event) => {
 });
 world.beforeEvents.playerBreakBlock.subscribe((event) => {
     const { player, itemStack } = event;
+    if (event.cancel || isStructureProtected(event.dimension.id, event.block.location))
+        return;
     if (!puedeUsarCreativePlus(player) || !itemStack)
         return;
     if (reemplazarBloqueEnSiguienteTick(event.block, event.dimension, itemStack))

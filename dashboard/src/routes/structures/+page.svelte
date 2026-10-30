@@ -39,6 +39,7 @@
 		mirror: string;
 		mode: 'instant' | 'layers';
 		includeAir: boolean;
+		protectBlocks: boolean;
 		anchor: StructureAnchor;
 		origin: { x: number; y: number; z: number };
 	};
@@ -71,6 +72,7 @@
 	let mirror = $state('none');
 	let placementMode = $state<'instant' | 'layers'>('instant');
 	let includeAir = $state(true);
+	let protectBlocks = $state(false);
 	let anchor = $state<StructureAnchor>('center');
 	let pendingPlacement = $state<PendingPlacement | null>(null);
 	let fileInput: HTMLInputElement;
@@ -338,6 +340,7 @@
 			mirror,
 			mode: placementMode,
 			includeAir,
+			protectBlocks,
 			anchor,
 			origin
 		};
@@ -714,6 +717,22 @@
 					</div>
 					<Switch id="include-air" bind:checked={includeAir} aria-label="Incluir aire" />
 				</div>
+				<div class="flex items-center justify-between gap-4 rounded-md border p-4 md:col-span-3">
+					<div class="grid gap-1">
+						<Label for="protect-blocks">Bloques se rompen</Label>
+						<p class="text-sm text-muted-foreground">
+							{protectBlocks
+								? 'No. SPB protegerá toda la huella contra minería de jugadores y explosiones.'
+								: 'Sí. Esta colocación no tendrá protección de bloques.'}
+						</p>
+					</div>
+					<Switch
+						id="protect-blocks"
+						checked={!protectBlocks}
+						onCheckedChange={(checked) => (protectBlocks = !checked)}
+						aria-label="Bloques se rompen"
+					/>
+				</div>
 				{#if pendingPlacement}<div
 						class="grid gap-3 rounded-md border border-destructive/50 bg-destructive/5 p-4 md:col-span-3"
 					>
@@ -730,6 +749,9 @@
 								{pendingPlacement.includeAir
 									? ' Los huecos sí reemplazarán el terreno existente.'
 									: ' Los huecos conservarán el terreno existente.'}
+								{pendingPlacement.protectBlocks
+									? ' Los bloques de esta colocación quedarán protegidos.'
+									: ' Sus bloques podrán romperse normalmente.'}
 							</p>
 						</div>
 						<div class="flex flex-wrap gap-2">

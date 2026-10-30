@@ -1,4 +1,5 @@
 import { ScriptEventSource, StructureAnimationMode, StructureMirrorAxis, StructureRotation, StructureSaveMode, system, world } from '@minecraft/server';
+import { protectStructurePlacement } from './protection.js';
 const ROTATIONS = {
     '0_degrees': StructureRotation.None,
     '90_degrees': StructureRotation.Rotate90,
@@ -70,7 +71,10 @@ function parseRequest(message) {
         mode: input.mode,
         // Old bridge requests predate this field. They intentionally keep the
         // native behavior: air in the template replaces the destination.
-        includeAir: input.includeAir !== false
+        includeAir: input.includeAir !== false,
+        // Older requests retain their previous behavior: no protection unless the
+        // dashboard explicitly requested it.
+        protectBlocks: input.protectBlocks === true
     };
     if (parsed.minX > parsed.maxX || parsed.minZ > parsed.maxZ) {
         throw new Error('la huella de la estructura no es válida');
@@ -209,6 +213,18 @@ async function placeAfterLoading(message) {
             mirror: MIRRORS[request.mirror],
             rotation: ROTATIONS[request.rotation]
         });
+        if (request.protectBlocks) {
+            protectStructurePlacement({
+                id: request.request,
+                dimension: dimension.id,
+                minX: request.minX,
+                maxX: request.maxX,
+                minY: request.y,
+                maxY: request.y + request.height - 1,
+                minZ: request.minZ,
+                maxZ: request.maxZ
+            });
+        }
         // An instant placement still needs a tick window for Bedrock's native
         // queue. Keep the temporary area alive while checking the world changed.
         await system.waitTicks(Math.max(40, placement.animationSeconds * 20 + 2));
