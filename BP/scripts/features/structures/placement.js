@@ -234,7 +234,10 @@ async function createPlacementAreas(dimension, request, managerAreaId) {
         }
         // Command ticking areas load asynchronously. Confirm each edge is
         // available before asking StructureManager to place the full template.
-        for (let attempt = 0; attempt < 10; attempt += 1) {
+        // A freshly generated remote footprint can take far longer than a
+        // nearby chunk. Give Bedrock one minute before declaring a real load
+        // failure; the bridge itself waits longer than this operation.
+        for (let attempt = 0; attempt < 120; attempt += 1) {
             if (segments.every((segment) => areaIsLoaded(dimension, request, segment))) {
                 return { managerAreaId: undefined, commandAreaIds };
             }
