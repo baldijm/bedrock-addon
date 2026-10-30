@@ -178,24 +178,95 @@ function makeNoAirVariant(request) {
         })
     };
 }
+/**
+ * The Script API grants each pack a smaller private ticking-area budget than
+ * the command system. Large remote builds can exceed that budget even though
+ * their footprint is valid. Split their footprint into command ticking areas
+ * of at most 10x10 chunks (the Bedrock command limit is 100 chunks per area).
+ */
+function commandAreaSegments(request) {
+    const minChunkX = Math.floor(request.minX / 16);
+    const maxChunkX = Math.floor(request.maxX / 16);
+    const minChunkZ = Math.floor(request.minZ / 16);
+    const maxChunkZ = Math.floor(request.maxZ / 16);
+    const segments = [];
+    for (let chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ += 10) {
+        for (let chunkX = minChunkX; chunkX <= maxChunkX; chunkX += 10) {
+            const endChunkX = Math.min(maxChunkX, chunkX + 9);
+            const endChunkZ = Math.min(maxChunkZ, chunkZ + 9);
+            segments.push({
+                from: { x: Math.max(request.minX, chunkX * 16), z: Math.max(request.minZ, chunkZ * 16) },
+                to: { x: Math.min(request.maxX, endChunkX * 16 + 15), z: Math.min(request.maxZ, endChunkZ * 16 + 15) }
+            });
+        }
+    }
+    return segments;
+}
+function areaIsLoaded(dimension, request, segment) {
+    try {
+        return Boolean(dimension.getBlock({ x: segment.from.x, y: request.y, z: segment.from.z })) &&
+            Boolean(dimension.getBlock({ x: segment.to.x, y: request.y, z: segment.to.z }));
+    }
+    catch {
+        return false;
+    }
+}
+async function createPlacementAreas(dimension, request, managerAreaId) {
+    const options = {
+        dimension,
+        from: { x: request.minX, y: 0, z: request.minZ },
+        to: { x: request.maxX, y: 0, z: request.maxZ }
+    };
+    if (world.tickingAreaManager.hasCapacity(options)) {
+        await world.tickingAreaManager.createTickingArea(managerAreaId, options);
+        return { managerAreaId, commandAreaIds: [] };
+    }
+    const segments = commandAreaSegments(request);
+    if (segments.length > 10) {
+        throw new Error(`la estructura requiere ${segments.length} áreas temporales; Bedrock permite como máximo 10`);
+    }
+    const commandAreaIds = [];
+    try {
+        for (const [index, segment] of segments.entries()) {
+            const id = `spbpl${request.request}${index}`;
+            dimension.runCommand(`tickingarea add ${segment.from.x} 0 ${segment.from.z} ${segment.to.x} 0 ${segment.to.z} ${id} true`);
+            commandAreaIds.push(id);
+        }
+        // Command ticking areas load asynchronously. Confirm each edge is
+        // available before asking StructureManager to place the full template.
+        for (let attempt = 0; attempt < 10; attempt += 1) {
+            if (segments.every((segment) => areaIsLoaded(dimension, request, segment))) {
+                return { managerAreaId: undefined, commandAreaIds };
+            }
+            await system.waitTicks(10);
+        }
+        throw new Error('Bedrock no terminó de cargar las áreas temporales a tiempo');
+    }
+    catch (error) {
+        for (const id of commandAreaIds) {
+            try {
+                dimension.runCommand(`tickingarea remove ${id}`);
+            }
+            catch {
+                // Keep the actual setup error; cleanup is best effort.
+            }
+        }
+        throw error;
+    }
+}
 async function placeAfterLoading(message) {
     let requestId = 'unknown';
     let areaId;
+    let commandAreaIds = [];
     let transientStructure;
     try {
         const request = parseRequest(message);
         requestId = request.request;
         areaId = `spb_place_${request.request}`;
         const dimension = world.getDimension('overworld');
-        const options = {
-            dimension,
-            from: { x: request.minX, y: 0, z: request.minZ },
-            to: { x: request.maxX, y: 0, z: request.maxZ }
-        };
-        if (!world.tickingAreaManager.hasCapacity(options)) {
-            throw new Error(`no hay capacidad para cargar toda la huella (${request.minX},${request.minZ})-(${request.maxX},${request.maxZ})`);
-        }
-        await world.tickingAreaManager.createTickingArea(areaId, options);
+        const placementAreas = await createPlacementAreas(dimension, request, areaId);
+        areaId = placementAreas.managerAreaId;
+        commandAreaIds = placementAreas.commandAreaIds;
         const placement = PLACEMENT_MODES[request.mode];
         const before = request.includeBlocks ? new Map(snapshot(dimension, request)) : undefined;
         let structure = request.structure;
@@ -258,6 +329,14 @@ async function placeAfterLoading(message) {
             }
             catch (error) {
                 console.warn(`SPB_STRUCTURE_PLACE_CLEANUP ${areaId} ${String(error)}`);
+            }
+        }
+        for (const id of commandAreaIds) {
+            try {
+                world.getDimension('overworld').runCommand(`tickingarea remove ${id}`);
+            }
+            catch (error) {
+                console.warn(`SPB_STRUCTURE_PLACE_CLEANUP ${id} ${String(error)}`);
             }
         }
     }
