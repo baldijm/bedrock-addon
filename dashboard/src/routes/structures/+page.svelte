@@ -52,7 +52,7 @@
 	let exporting = $state(false);
 	let importing = $state(false);
 	let importProgress = $state<number | null>(null);
-	let importPhase = $state<'uploading' | 'publishing' | null>(null);
+	let importPhase = $state<'preparing' | 'uploading' | 'publishing' | null>(null);
 	let importFileSize = $state(0);
 	let activating = $state(false);
 	let activationNeeded = $state(false);
@@ -83,6 +83,7 @@
 	let fileInput = $state<HTMLInputElement | undefined>(undefined);
 	let selectedFiles = $state<FileList | undefined>(undefined);
 	let activeImport: XMLHttpRequest | null = null;
+	let activeMultipartSession = '';
 	let environment = $state<'staging' | 'production'>('staging');
 
 	function activeEnvironment() {
@@ -173,43 +174,47 @@
 		}
 		importing = true;
 		importProgress = 0;
-		importPhase = 'uploading';
+		importPhase = 'preparing';
 		importFileSize = file.size;
 		try {
-			const response = await new Promise<{ status: number; body: unknown }>((resolve, reject) => {
-				const upload = new XMLHttpRequest();
-				activeImport = upload;
-				upload.open('POST', `/api/structures?name=${encodeURIComponent(target)}`);
-				upload.setRequestHeader('content-type', 'application/octet-stream');
-				upload.setRequestHeader('x-spb-structure-size', String(file.size));
-				upload.upload.onprogress = (event) => {
-					if (!event.lengthComputable) return;
-					importProgress = Math.min(100, Math.round((event.loaded / event.total) * 100));
-				};
-				upload.upload.onload = () => {
-					importProgress = 100;
-					importPhase = 'publishing';
-				};
-				upload.onerror = () => reject(new Error('La conexión se interrumpió durante la carga.'));
-				upload.onabort = () => reject(new Error('La carga fue cancelada.'));
-				upload.onload = () => {
-					let body: unknown = {};
-					try {
-						body = JSON.parse(upload.responseText);
-					} catch {
-						// The status below still supplies a useful generic error.
-					}
-					resolve({ status: upload.status, body });
-				};
-				upload.send(file);
+			const prepared = await requestJson('/api/structures/multipart', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ name: target, size: file.size })
+			});
+			const setup = prepared.body as {
+				sessionId?: string;
+				partBytes?: number;
+				parts?: number;
+				error?: string;
+			};
+			if (!prepared.ok || !setup.sessionId || !setup.partBytes || !setup.parts)
+				throw new Error(uploadError(prepared.status, setup.error));
+			activeMultipartSession = setup.sessionId;
+			importPhase = 'uploading';
+			const parts: Array<{ partNumber: number; etag: string }> = [];
+			for (let index = 0; index < setup.parts; index += 1) {
+				const start = index * setup.partBytes;
+				const chunk = file.slice(start, Math.min(start + setup.partBytes, file.size));
+				const uploaded = await uploadPart(setup.sessionId, index + 1, chunk, start, file.size);
+				const result = uploaded.body as { etag?: string; error?: string };
+				if (!uploaded.ok || !result.etag)
+					throw new Error(uploadError(uploaded.status, result.error));
+				parts.push({ partNumber: index + 1, etag: result.etag });
+			}
+			importProgress = 100;
+			importPhase = 'publishing';
+			const response = await requestJson(`/api/structures/multipart/${setup.sessionId}/complete`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ parts })
 			});
 			const body = response.body as {
 				error?: string;
 				name?: string;
 				deployment?: string;
 			};
-			if (response.status < 200 || response.status >= 300)
-				throw new Error(body.error ?? 'No se pudo importar.');
+			if (!response.ok) throw new Error(uploadError(response.status, body.error));
 			toast.success(`Archivo ${body.name} publicado`, { description: body.deployment });
 			activationNeeded = true;
 			if (fileInput) fileInput.value = '';
@@ -225,11 +230,59 @@
 			importPhase = null;
 			importFileSize = 0;
 			activeImport = null;
+			activeMultipartSession = '';
 		}
 	}
 
 	function cancelImport() {
+		const sessionId = activeMultipartSession;
 		activeImport?.abort();
+		if (sessionId) void fetch(`/api/structures/multipart/${sessionId}`, { method: 'DELETE' });
+	}
+
+	function uploadError(status: number, message?: string) {
+		if (message) return message;
+		return status
+			? `La carga fue rechazada por el servidor (HTTP ${status}).`
+			: 'No se recibió respuesta del servidor.';
+	}
+
+	async function requestJson(url: string, options: RequestInit) {
+		const response = await fetch(url, options);
+		const body = await response.json().catch(() => ({}));
+		return { ok: response.ok, status: response.status, body };
+	}
+
+	function uploadPart(
+		sessionId: string,
+		partNumber: number,
+		chunk: Blob,
+		offset: number,
+		total: number
+	) {
+		return new Promise<{ ok: boolean; status: number; body: unknown }>((resolve, reject) => {
+			const upload = new XMLHttpRequest();
+			activeImport = upload;
+			upload.open('PUT', `/api/structures/multipart/${sessionId}/part/${partNumber}`);
+			upload.setRequestHeader('content-type', 'application/octet-stream');
+			upload.setRequestHeader('x-spb-part-size', String(chunk.size));
+			upload.upload.onprogress = (event) => {
+				if (!event.lengthComputable) return;
+				importProgress = Math.min(100, Math.round(((offset + event.loaded) / total) * 100));
+			};
+			upload.onerror = () => reject(new Error('La conexión se interrumpió durante la carga.'));
+			upload.onabort = () => reject(new Error('La carga fue cancelada.'));
+			upload.onload = () => {
+				let body: unknown = {};
+				try {
+					body = JSON.parse(upload.responseText);
+				} catch {
+					// uploadError adds the HTTP status when a proxy does not return JSON.
+				}
+				resolve({ ok: upload.status >= 200 && upload.status < 300, status: upload.status, body });
+			};
+			upload.send(chunk);
+		});
 	}
 
 	async function activateStagingStructures() {
@@ -543,9 +596,11 @@
 					{#if importing && importProgress !== null}<div class="grid gap-2 rounded-md border p-3">
 							<div class="flex items-center justify-between gap-3 text-sm">
 								<span class="font-medium"
-									>{importPhase === 'uploading'
-										? 'Subiendo archivo'
-										: 'Verificando y publicando en R2'}</span
+									>{importPhase === 'preparing'
+										? 'Preparando carga segura'
+										: importPhase === 'uploading'
+											? 'Subiendo archivo por partes'
+											: 'Verificando y publicando en R2'}</span
 								>
 								<span class="tabular-nums">{importProgress}%</span>
 							</div>
@@ -563,9 +618,11 @@
 								></div>
 							</div>
 							<p class="text-xs text-muted-foreground">
-								{importPhase === 'uploading'
-									? `${formatSize(Math.round((importFileSize * importProgress) / 100))} de ${formatSize(importFileSize)} enviados.`
-									: 'El archivo llegó al servidor; se está validando y guardando antes de aparecer en la biblioteca.'}
+								{importPhase === 'preparing'
+									? 'Creando una sesión temporal para enviar el archivo de forma segura.'
+									: importPhase === 'uploading'
+										? `${formatSize(Math.round((importFileSize * importProgress) / 100))} de ${formatSize(importFileSize)} enviados.`
+										: 'El archivo llegó al servidor; se está validando y guardando antes de aparecer en la biblioteca.'}
 							</p>
 							<Button size="sm" variant="outline" onclick={cancelImport}>Cancelar carga</Button>
 						</div>{/if}
