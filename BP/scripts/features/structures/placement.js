@@ -231,6 +231,9 @@ async function createPlacementAreas(dimension, request, managerAreaId) {
             const id = `spbpl${request.request}${index}`;
             dimension.runCommand(`tickingarea add ${segment.from.x} 0 ${segment.from.z} ${segment.to.x} 0 ${segment.to.z} ${id} true`);
             commandAreaIds.push(id);
+            // Preloading a large area can do substantial synchronous work. Yield
+            // between areas so four remote loads cannot trip Bedrock's watchdog.
+            await system.waitTicks(1);
         }
         // Command ticking areas load asynchronously. Confirm each edge is
         // available before asking StructureManager to place the full template.
