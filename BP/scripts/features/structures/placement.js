@@ -178,12 +178,6 @@ function makeNoAirVariant(request) {
         })
     };
 }
-/**
- * The Script API grants each pack a smaller private ticking-area budget than
- * the command system. Large remote builds can exceed that budget even though
- * their footprint is valid. A 100-chunk preload can trip the server watchdog
- * on a freshly generated remote location, so use 4x10 chunks per area.
- */
 function commandAreaSegments(request) {
     const minChunkX = Math.floor(request.minX / 16);
     const maxChunkX = Math.floor(request.maxX / 16);
@@ -195,8 +189,14 @@ function commandAreaSegments(request) {
             const endChunkX = Math.min(maxChunkX, chunkX + 3);
             const endChunkZ = Math.min(maxChunkZ, chunkZ + 9);
             segments.push({
-                from: { x: Math.max(request.minX, chunkX * 16), z: Math.max(request.minZ, chunkZ * 16) },
-                to: { x: Math.min(request.maxX, endChunkX * 16 + 15), z: Math.min(request.maxZ, endChunkZ * 16 + 15) }
+                from: {
+                    x: Math.max(request.minX, chunkX * 16),
+                    z: Math.max(request.minZ, chunkZ * 16)
+                },
+                to: {
+                    x: Math.min(request.maxX, endChunkX * 16 + 15),
+                    z: Math.min(request.maxZ, endChunkZ * 16 + 15)
+                }
             });
         }
     }
@@ -204,8 +204,11 @@ function commandAreaSegments(request) {
 }
 function areaIsLoaded(dimension, request, segment) {
     try {
-        return Boolean(dimension.getBlock({ x: segment.from.x, y: request.y, z: segment.from.z })) &&
-            Boolean(dimension.getBlock({ x: segment.to.x, y: request.y, z: segment.to.z }));
+        return Boolean(dimension.getBlock({
+            x: segment.from.x, y: request.y, z: segment.from.z
+        })) && Boolean(dimension.getBlock({
+            x: segment.to.x, y: request.y, z: segment.to.z
+        }));
     }
     catch {
         return false;
@@ -229,19 +232,13 @@ async function createPlacementAreas(dimension, request, managerAreaId) {
     try {
         for (const [index, segment] of segments.entries()) {
             const id = `spbpl${request.request}${index}`;
-            dimension.runCommand(`tickingarea add ${segment.from.x} 0 ${segment.from.z} ${segment.to.x} 0 ${segment.to.z} ${id} true`);
+            dimension.runCommand(`tickingarea add ${segment.from.x} 0 ${segment.from.z} ` +
+                `${segment.to.x} 0 ${segment.to.z} ${id} true`);
             commandAreaIds.push(id);
-            // Preloading a large area can do substantial synchronous work. Yield
-            // between areas so four remote loads cannot trip Bedrock's watchdog.
             await system.waitTicks(1);
         }
-        // Command ticking areas load asynchronously. Confirm each edge is
-        // available before asking StructureManager to place the full template.
-        // A freshly generated remote footprint can take far longer than a
-        // nearby chunk. Give Bedrock one minute before declaring a real load
-        // failure; the bridge itself waits longer than this operation.
         for (let attempt = 0; attempt < 120; attempt += 1) {
-            if (segments.every((segment) => areaIsLoaded(dimension, request, segment))) {
+            if (segments.every(segment => areaIsLoaded(dimension, request, segment))) {
                 return { managerAreaId: undefined, commandAreaIds };
             }
             await system.waitTicks(10);
@@ -254,7 +251,7 @@ async function createPlacementAreas(dimension, request, managerAreaId) {
                 dimension.runCommand(`tickingarea remove ${id}`);
             }
             catch {
-                // Keep the actual setup error; cleanup is best effort.
+                // Conservar el error original.
             }
         }
         throw error;
