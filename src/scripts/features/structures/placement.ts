@@ -1,4 +1,5 @@
 import {
+  BlockVolume,
   ScriptEventSource,
   StructureAnimationMode,
   StructureMirrorAxis,
@@ -8,7 +9,16 @@ import {
   world
 } from '@minecraft/server';
 import type { BlockPermutation, Dimension } from '@minecraft/server';
-import { protectStructurePlacement } from './protection.js';
+import { protectStructurePlacement, removeStructureProtections } from './protection.js';
+
+type AreaRequest = {
+  request: string;
+  y: number;
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+};
 
 type PlacementRequest = {
   request: string;
@@ -29,6 +39,16 @@ type PlacementRequest = {
   includeBlocks: boolean;
   includeAir: boolean;
   protectBlocks: boolean;
+  protectPlace: boolean;
+  protectEnvironment: boolean;
+};
+
+type EraseRequest = AreaRequest & {
+  x: number;
+  z: number;
+  width: number;
+  height: number;
+  depth: number;
 };
 
 const ROTATIONS = {
@@ -112,7 +132,9 @@ function parseRequest(message: string): PlacementRequest {
     includeAir: input.includeAir !== false,
     // Older requests retain their previous behavior: no protection unless the
     // dashboard explicitly requested it.
-    protectBlocks: input.protectBlocks === true && input.includeBlocks !== false
+    protectBlocks: input.protectBlocks === true && input.includeBlocks !== false,
+    protectPlace: input.protectPlace === true && input.includeBlocks !== false,
+    protectEnvironment: input.protectEnvironment === true && input.includeBlocks !== false
   };
   if (parsed.minX > parsed.maxX || parsed.minZ > parsed.maxZ) {
     throw new Error('la huella de la estructura no es válida');
@@ -121,6 +143,45 @@ function parseRequest(message: string): PlacementRequest {
     throw new Error('las dimensiones de la estructura no son válidas');
   }
   return parsed;
+}
+
+function parseEraseRequest(message: string): EraseRequest {
+  let value: unknown;
+  try {
+    value = JSON.parse(message);
+  } catch {
+    throw new Error('el mensaje de borrado no contiene JSON válido');
+  }
+  if (!value || typeof value !== 'object') throw new Error('la solicitud de borrado no es un objeto');
+  const input = value as Record<string, unknown>;
+  if (typeof input.request !== 'string' || !REQUEST_ID.test(input.request)) {
+    throw new Error('el identificador de solicitud no es válido');
+  }
+  const request: EraseRequest = {
+    request: input.request,
+    x: integer(input.x, 'X'),
+    y: integer(input.y, 'Y'),
+    z: integer(input.z, 'Z'),
+    minX: integer(input.minX, 'X mínima'),
+    maxX: integer(input.maxX, 'X máxima'),
+    minZ: integer(input.minZ, 'Z mínima'),
+    maxZ: integer(input.maxZ, 'Z máxima'),
+    width: integer(input.width, 'ancho'),
+    height: integer(input.height, 'alto'),
+    depth: integer(input.depth, 'profundidad')
+  };
+  if (
+    request.width < 1 || request.width > 512 ||
+    request.height < 1 || request.height > 512 ||
+    request.depth < 1 || request.depth > 512 ||
+    request.width * request.height * request.depth > 8_000_000 ||
+    request.minX !== request.x || request.minZ !== request.z ||
+    request.maxX !== request.x + request.width - 1 ||
+    request.maxZ !== request.z + request.depth - 1
+  ) {
+    throw new Error('el volumen de borrado no es válido o supera 8,000,000 de bloques');
+  }
+  return request;
 }
 
 function marker(request: string, status: 'OK' | 'UNCONFIRMED' | 'ERROR', detail = ''): void {
@@ -220,7 +281,7 @@ type CommandAreaSegment = {
   to: { x: number; z: number };
 };
 
-function commandAreaSegments(request: PlacementRequest): CommandAreaSegment[] {
+function commandAreaSegments(request: AreaRequest): CommandAreaSegment[] {
   const minChunkX = Math.floor(request.minX / 16);
   const maxChunkX = Math.floor(request.maxX / 16);
   const minChunkZ = Math.floor(request.minZ / 16);
@@ -248,7 +309,7 @@ function commandAreaSegments(request: PlacementRequest): CommandAreaSegment[] {
 
 function areaIsLoaded(
   dimension: Dimension,
-  request: PlacementRequest,
+  request: AreaRequest,
   segment: CommandAreaSegment
 ): boolean {
   try {
@@ -264,7 +325,7 @@ function areaIsLoaded(
 
 async function createPlacementAreas(
   dimension: Dimension,
-  request: PlacementRequest,
+  request: AreaRequest,
   managerAreaId: string
 ): Promise<{ managerAreaId?: string; commandAreaIds: string[] }> {
   const options = {
@@ -316,6 +377,68 @@ async function createPlacementAreas(
   }
 }
 
+async function eraseAfterLoading(message: string): Promise<void> {
+  let requestId = 'unknown';
+  let areaId: string | undefined;
+  let commandAreaIds: string[] = [];
+  try {
+    const request = parseEraseRequest(message);
+    requestId = request.request;
+    areaId = `spb_erase_${request.request}`;
+    const dimension = world.getDimension('overworld');
+    const placementAreas = await createPlacementAreas(dimension, request, areaId);
+    areaId = placementAreas.managerAreaId;
+    commandAreaIds = placementAreas.commandAreaIds;
+
+    for (let y = request.y; y < request.y + request.height; y += 16) {
+      for (let z = request.z; z < request.z + request.depth; z += 16) {
+        for (let x = request.x; x < request.x + request.width; x += 16) {
+          dimension.fillBlocks(
+            new BlockVolume(
+              { x, y, z },
+              {
+                x: Math.min(request.x + request.width - 1, x + 15),
+                y: Math.min(request.y + request.height - 1, y + 15),
+                z: Math.min(request.z + request.depth - 1, z + 15)
+              }
+            ),
+            'minecraft:air'
+          );
+          await system.waitTicks(1);
+        }
+      }
+    }
+
+    removeStructureProtections(dimension.id, {
+      minX: request.x,
+      maxX: request.x + request.width - 1,
+      minY: request.y,
+      maxY: request.y + request.height - 1,
+      minZ: request.z,
+      maxZ: request.z + request.depth - 1
+    });
+    console.warn(`SPB_STRUCTURE_ERASE ${request.request} OK`);
+  } catch (error: unknown) {
+    const detail = (error instanceof Error ? error.message : String(error)).replace(/\s+/g, ' ').slice(0, 300);
+    console.warn(`SPB_STRUCTURE_ERASE ${requestId} ERROR ${detail}`);
+  } finally {
+    if (areaId && world.tickingAreaManager.hasTickingArea(areaId)) {
+      try {
+        world.tickingAreaManager.removeTickingArea(areaId);
+      } catch (error: unknown) {
+        console.warn(`SPB_STRUCTURE_ERASE_CLEANUP ${areaId} ${String(error)}`);
+      }
+    }
+    for (const id of commandAreaIds) {
+      try {
+        world.getDimension('overworld').runCommand(`tickingarea remove ${id}`);
+      } catch (error: unknown) {
+        console.warn(`SPB_STRUCTURE_ERASE_CLEANUP ${id} ${String(error)}`);
+      }
+    }
+  }
+}
+
 async function placeAfterLoading(message: string): Promise<void> {
   let requestId = 'unknown';
   let areaId: string | undefined;
@@ -354,18 +477,6 @@ async function placeAfterLoading(message: string): Promise<void> {
         rotation: ROTATIONS[request.rotation]
       }
     );
-    if (request.protectBlocks) {
-      protectStructurePlacement({
-        id: request.request,
-        dimension: dimension.id,
-        minX: request.minX,
-        maxX: request.maxX,
-        minY: request.y,
-        maxY: request.y + request.height - 1,
-        minZ: request.minZ,
-        maxZ: request.maxZ
-      });
-    }
     // An instant placement still needs a tick window for Bedrock's native
     // queue. Keep the temporary area alive while checking the world changed.
     await system.waitTicks(Math.max(40, placement.animationSeconds * 20 + 2));
@@ -379,6 +490,21 @@ async function placeAfterLoading(message: string): Promise<void> {
         'Bedrock aceptó la solicitud, pero no se observó ningún bloque cambiado.'
       );
       return;
+    }
+    if (request.protectBlocks || request.protectPlace || request.protectEnvironment) {
+      protectStructurePlacement({
+        id: request.request,
+        dimension: dimension.id,
+        minX: request.minX,
+        maxX: request.maxX,
+        minY: request.y,
+        maxY: request.y + request.height - 1,
+        minZ: request.minZ,
+        maxZ: request.maxZ,
+        protectBreak: request.protectBlocks,
+        protectPlace: request.protectPlace,
+        protectEnvironment: request.protectEnvironment
+      });
     }
     marker(request.request, 'OK');
   } catch (error: unknown) {
@@ -410,12 +536,13 @@ async function placeAfterLoading(message: string): Promise<void> {
 
 system.afterEvents.scriptEventReceive.subscribe(
   (event) => {
-    if (event.id !== 'spb:structure_place') return;
+    if (event.id !== 'spb:structure_place' && event.id !== 'spb:structure_erase') return;
     if (event.sourceType !== ScriptEventSource.Server) {
       console.warn('SPB_STRUCTURE_PLACE_REJECTED source must be the dedicated server console');
       return;
     }
-    void placeAfterLoading(event.message);
+    if (event.id === 'spb:structure_erase') void eraseAfterLoading(event.message);
+    else void placeAfterLoading(event.message);
   },
   { namespaces: ['spb'] }
 );

@@ -8,12 +8,13 @@ export const GET: RequestHandler = async ({ request }) => {
 		const [status, production, staging] = await Promise.all([
 			bridgeRequest('production', '/world/promotion') as Promise<{ sourceWorld?: string; productionWorld?: string }>,
 			bridgeRequest('production', '/properties') as Promise<{ properties?: { 'level-name'?: string } }>,
-			bridgeRequest('staging', '/properties') as Promise<{ properties?: { 'level-name'?: string } }>
+			bridgeRequest('staging', '/properties') as Promise<{ properties?: { 'level-name'?: string }; worldSeed?: string }>
 		]);
 		return json({
 			...status,
 			productionWorld: status.productionWorld ?? production.properties?.['level-name'] ?? '',
-			stagingWorld: status.sourceWorld ?? staging.properties?.['level-name'] ?? ''
+			stagingWorld: status.sourceWorld ?? staging.properties?.['level-name'] ?? '',
+			stagingSeed: staging.worldSeed ?? ''
 		});
 	} catch (error) {
 		return json({ error: error instanceof Error ? error.message : 'No se pudo consultar la promoción.' }, 503);

@@ -1,4 +1,4 @@
-import { world } from '@minecraft/server';
+import { BlockTypes, Direction, world } from '@minecraft/server';
 
 type ProtectedRegion = {
   id: string;
@@ -9,6 +9,9 @@ type ProtectedRegion = {
   maxY: number;
   minZ: number;
   maxZ: number;
+  protectBreak?: boolean;
+  protectPlace?: boolean;
+  protectEnvironment?: boolean;
 };
 
 const PROPERTY = 'spb:structure_protections';
@@ -54,7 +57,74 @@ export function isStructureProtected(
   dimension: string,
   location: { x: number; y: number; z: number }
 ): boolean {
-  return readRegions().some((region) => contains(region, dimension, location));
+  return readRegions().some(
+    (region) => region.protectBreak !== false && contains(region, dimension, location)
+  );
+}
+
+function hasProtection(
+  dimension: string,
+  location: { x: number; y: number; z: number },
+  permission: 'place' | 'environment'
+): boolean {
+  return readRegions().some((region) => {
+    const protectedByRegion =
+      permission === 'place'
+        ? region.protectPlace === true
+        : region.protectEnvironment !== false;
+    return protectedByRegion && contains(region, dimension, location);
+  });
+}
+
+const REPLACEABLE_BLOCKS = new Set([
+  'minecraft:air',
+  'minecraft:cave_air',
+  'minecraft:void_air',
+  'minecraft:short_grass',
+  'minecraft:tall_grass',
+  'minecraft:fern',
+  'minecraft:large_fern',
+  'minecraft:deadbush',
+  'minecraft:snow_layer',
+  'minecraft:vine',
+  'minecraft:fire',
+  'minecraft:soul_fire',
+  'minecraft:water',
+  'minecraft:flowing_water',
+  'minecraft:lava',
+  'minecraft:flowing_lava'
+]);
+
+function interactionTarget(
+  location: { x: number; y: number; z: number },
+  blockType: string,
+  face: Direction
+) {
+  const target = { ...location };
+  if (REPLACEABLE_BLOCKS.has(blockType)) return target;
+  if (face === Direction.Up) target.y += 1;
+  else if (face === Direction.Down) target.y -= 1;
+  else if (face === Direction.North) target.z -= 1;
+  else if (face === Direction.South) target.z += 1;
+  else if (face === Direction.East) target.x += 1;
+  else if (face === Direction.West) target.x -= 1;
+  return target;
+}
+
+function isBlockItem(typeId: string): boolean {
+  try {
+    return Boolean(BlockTypes.get(typeId));
+  } catch {
+    return false;
+  }
+}
+
+function canDamageEnvironment(typeId: string): boolean {
+  return (
+    typeId === 'minecraft:flint_and_steel' ||
+    typeId === 'minecraft:fire_charge' ||
+    (typeId.endsWith('_bucket') && typeId !== 'minecraft:bucket' && typeId !== 'minecraft:milk_bucket')
+  );
 }
 
 /**
@@ -68,6 +138,36 @@ export function protectStructurePlacement(region: ProtectedRegion): void {
   world.setDynamicProperty(PROPERTY, JSON.stringify(regions.slice(-MAX_REGIONS)));
 }
 
+export function removeStructureProtections(
+  dimension: string,
+  bounds: { minX: number; maxX: number; minY: number; maxY: number; minZ: number; maxZ: number }
+): void {
+  const regions = readRegions().filter(
+    (region) =>
+      region.dimension !== dimension ||
+      region.maxX < bounds.minX ||
+      region.minX > bounds.maxX ||
+      region.maxY < bounds.minY ||
+      region.minY > bounds.maxY ||
+      region.maxZ < bounds.minZ ||
+      region.minZ > bounds.maxZ
+  );
+  world.setDynamicProperty(PROPERTY, JSON.stringify(regions));
+}
+
+world.beforeEvents.playerInteractWithBlock.subscribe((event) => {
+  if (event.cancel || !event.itemStack) return;
+  const target = interactionTarget(event.block.location, event.block.typeId, event.blockFace);
+  const dimension = event.block.dimension.id;
+  if (
+    (isBlockItem(event.itemStack.typeId) && hasProtection(dimension, target, 'place')) ||
+    (canDamageEnvironment(event.itemStack.typeId) &&
+      hasProtection(dimension, target, 'environment'))
+  ) {
+    event.cancel = true;
+  }
+});
+
 world.beforeEvents.playerBreakBlock.subscribe((event) => {
   if (isStructureProtected(event.dimension.id, event.block.location)) event.cancel = true;
 });
@@ -75,7 +175,7 @@ world.beforeEvents.playerBreakBlock.subscribe((event) => {
 world.beforeEvents.explosion.subscribe((event) => {
   event.setImpactedBlocks(
     event.getImpactedBlocks().filter(
-      (block) => !isStructureProtected(event.dimension.id, block.location)
+      (block) => !hasProtection(event.dimension.id, block.location, 'environment')
     )
   );
 });

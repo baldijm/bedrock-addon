@@ -45,6 +45,7 @@
 	let currentGameRules = $state({ showCoordinates: false, showDaysPlayed: false });
 	let worldState = $state<{ world?: string; savedDifficulty?: string; savedGamemode?: string }>({});
 	let hasPendingChanges = $state(false);
+	let worldSeed = $state('');
 
 	function defaults(): Settings {
 		return { serverName: '', levelName: '', levelSeed: '', gamemode: 'survival', difficulty: 'normal', maxPlayers: 10, viewDistance: 12, tickDistance: 4, allowCheats: false, allowList: false, permissionLevel: 'member', idleTimeout: 0, showCoordinates: false, showDaysPlayed: false };
@@ -55,6 +56,7 @@
 	const currentRows = $derived([
 		['Nombre del servidor', activeProperties['server-name'] || '—'],
 		['Mundo activo', activeProperties['level-name'] || '—'],
+		['Seed del mundo', worldSeed || 'No disponible'],
 		[isProduction ? 'Modo del mundo (último guardado)' : 'Modo', isProduction ? worldState.savedGamemode || '—' : activeProperties.gamemode || '—'],
 		[isProduction ? 'Dificultad del mundo (último guardado)' : 'Dificultad', isProduction ? worldState.savedDifficulty || '—' : activeProperties.difficulty || '—'],
 		...(isProduction ? [['Dificultad en server.properties', savedProperties.difficulty || '—']] : []),
@@ -96,12 +98,13 @@
 		loading = true; error = '';
 		try {
 			const response = await fetch('/api/server-settings');
-			const body = await response.json() as { properties?: Properties; activeProperties?: Properties; gameRules?: { showCoordinates?: boolean; showDaysPlayed?: boolean }; worldState?: { world?: string; savedDifficulty?: string; savedGamemode?: string }; hasPendingChanges?: boolean; environment?: string; error?: string };
+			const body = await response.json() as { properties?: Properties; activeProperties?: Properties; gameRules?: { showCoordinates?: boolean; showDaysPlayed?: boolean }; worldState?: { world?: string; savedDifficulty?: string; savedGamemode?: string }; hasPendingChanges?: boolean; environment?: string; worldSeed?: string; error?: string };
 			if (response.status === 401) { location.replace('/terminal?returnTo=/server'); return; }
 			if (!response.ok || !body.properties) throw new Error(body.error ?? 'No se pudo leer la configuración.');
 			isProduction = body.environment === 'production';
 			savedProperties = body.properties;
 			worldState = body.worldState ?? {};
+			worldSeed = body.worldSeed ?? '';
 			settings = fromProperties(body.properties);
 			settings.showCoordinates = body.gameRules?.showCoordinates === true;
 			settings.showDaysPlayed = body.gameRules?.showDaysPlayed === true;

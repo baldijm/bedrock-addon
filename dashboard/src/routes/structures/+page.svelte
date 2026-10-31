@@ -41,8 +41,18 @@
 		includeBlocks: boolean;
 		includeAir: boolean;
 		protectBlocks: boolean;
+		protectPlace: boolean;
+		protectEnvironment: boolean;
 		anchor: StructureAnchor;
 		origin: { x: number; y: number; z: number };
+	};
+	type PendingErase = {
+		x: number;
+		y: number;
+		z: number;
+		width: number;
+		height: number;
+		depth: number;
 	};
 	type StaticCandidate = { id: string; replacement: string; label: string };
 
@@ -66,6 +76,8 @@
 	let uploadLimitMiB = $state(20);
 	let savedUploadLimitMiB = $state(20);
 	let placing = $state(false);
+	let erasing = $state(false);
+	let toolMode = $state<'place' | 'erase'>('place');
 	let source = $state('mystructure:');
 	let target = $state('');
 	let selected = $state('');
@@ -78,13 +90,26 @@
 	let includeBlocks = $state(true);
 	let includeAir = $state(true);
 	let protectBlocks = $state(false);
+	let protectPlace = $state(false);
+	let protectEnvironment = $state(false);
 	let anchor = $state<StructureAnchor>('center');
 	let pendingPlacement = $state<PendingPlacement | null>(null);
+	let eraseWidth = $state('');
+	let eraseHeight = $state('');
+	let eraseDepth = $state('');
+	let pendingErase = $state<PendingErase | null>(null);
 	let fileInput = $state<HTMLInputElement | undefined>(undefined);
 	let selectedFiles = $state<FileList | undefined>(undefined);
 	let activeImport: XMLHttpRequest | null = null;
 	let activeMultipartSession = '';
 	let environment = $state<'staging' | 'production'>('staging');
+	let libraryExpanded = $state(false);
+	let libraryQuery = $state('');
+	const filteredStructures = $derived(
+		structures.filter((structure) =>
+			structure.name.toLowerCase().includes(libraryQuery.trim().toLowerCase())
+		)
+	);
 
 	function activeEnvironment() {
 		return document.cookie
@@ -435,6 +460,8 @@
 			includeBlocks,
 			includeAir,
 			protectBlocks,
+			protectPlace,
+			protectEnvironment,
 			anchor,
 			origin
 		};
@@ -488,6 +515,58 @@
 			});
 		} finally {
 			placing = false;
+		}
+	}
+
+	function eraseRequest() {
+		const position = requestedPosition();
+		const dimensions = {
+			width: Number(eraseWidth),
+			height: Number(eraseHeight),
+			depth: Number(eraseDepth)
+		};
+		if (
+			!position ||
+			!Object.values(dimensions).every((value) => Number.isInteger(value) && value > 0 && value <= 512) ||
+			dimensions.width * dimensions.height * dimensions.depth > 8_000_000
+		)
+			return null;
+		return { ...position, ...dimensions };
+	}
+
+	function prepareErase() {
+		const request = eraseRequest();
+		if (!request) {
+			toast.error('Completa coordenadas y dimensiones válidas antes de continuar.', {
+				description: 'Cada dimensión admite de 1 a 512 bloques y el volumen máximo es 8,000,000.'
+			});
+			return;
+		}
+		pendingErase = request;
+	}
+
+	async function eraseArea() {
+		const request = pendingErase;
+		if (erasing || !request) return;
+		erasing = true;
+		try {
+			const response = await fetch('/api/structures/erase', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ ...request, confirmed: true })
+			});
+			const body = (await response.json().catch(() => ({}))) as { error?: string };
+			if (!response.ok) throw new Error(body.error ?? 'No se pudo borrar el área.');
+			toast.success('Área borrada correctamente', {
+				description: `${request.width} × ${request.height} × ${request.depth} bloques desde ${request.x}, ${request.y}, ${request.z}.`
+			});
+			pendingErase = null;
+		} catch (reason) {
+			toast.error('No se pudo borrar el área', {
+				description: reason instanceof Error ? reason.message : undefined
+			});
+		} finally {
+			erasing = false;
 		}
 	}
 
@@ -741,15 +820,18 @@
 				></Card.Root
 			>{/if}
 		<Card.Root
-			><Card.Header
-				><Card.Title>Biblioteca versionada</Card.Title><Card.Description
+			><Card.Header class="flex-row items-center justify-between gap-4"
+				><div><Card.Title>Biblioteca versionada</Card.Title><Card.Description
 					>{loading
 						? 'Consultando la biblioteca…'
 						: `${structures.length} estructura${structures.length === 1 ? '' : 's'} disponible${structures.length === 1 ? '' : 's'}.`}</Card.Description
+				></div><Button size="sm" variant="outline" onclick={() => (libraryExpanded = !libraryExpanded)}
+					>{libraryExpanded ? 'Ocultar biblioteca' : 'Ver biblioteca'}</Button
 				></Card.Header
-			><Card.Content
-				>{#if structures.length}<div class="divide-y rounded-md border">
-						{#each structures as structure}<div class="flex flex-wrap items-center gap-3 px-4 py-3">
+			>{#if libraryExpanded}<Card.Content class="grid gap-3"
+				><Input bind:value={libraryQuery} placeholder="Buscar estructura…" aria-label="Buscar en la biblioteca" />
+				{#if filteredStructures.length}<div class="max-h-[28rem] divide-y overflow-y-auto rounded-md border">
+						{#each filteredStructures as structure}<div class="flex flex-wrap items-center gap-3 px-4 py-3">
 								<div class="min-w-0 flex-1">
 									<code class="block truncate">spb:{structure.name}</code>
 									<span class="text-sm text-muted-foreground"
@@ -770,11 +852,33 @@
 					</div>{:else if !loading}<div
 						class="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground"
 					>
-						Todavía no hay estructuras publicadas.
+						{structures.length ? 'No hay estructuras que coincidan con la búsqueda.' : 'Todavía no hay estructuras publicadas.'}
 					</div>{/if}</Card.Content
-			></Card.Root
+			>{/if}</Card.Root
 		>
-		<Card.Root class="border-amber-500/30"
+		<div class="flex w-fit gap-1 rounded-md border bg-muted/30 p-1">
+			<Button
+				size="sm"
+				variant={toolMode === 'place' ? 'default' : 'ghost'}
+				onclick={() => {
+					toolMode = 'place';
+					pendingErase = null;
+				}}>Colocar</Button
+			>
+			<Button
+				size="sm"
+				variant={toolMode === 'erase' ? 'destructive' : 'ghost'}
+				disabled={environment === 'production'}
+				onclick={() => {
+					toolMode = 'erase';
+					pendingPlacement = null;
+				}}>Borrador</Button
+			>
+		</div>
+		{#if environment === 'production'}<p class="-mt-4 text-sm text-muted-foreground">
+			El borrador y las protecciones nuevas se habilitarán en producción después de validarlas en Staging.
+		</p>{/if}
+		{#if toolMode === 'place'}<Card.Root class="border-amber-500/30"
 			><Card.Header
 				><Card.Title
 					>Colocar en {environment === 'production' ? 'producción' : 'staging'}</Card.Title
@@ -893,7 +997,7 @@
 						<Label for="protect-blocks">Bloques se rompen</Label>
 						<p class="text-sm text-muted-foreground">
 							{includeBlocks && protectBlocks
-								? 'No. SPB protegerá toda la huella contra minería de jugadores y explosiones.'
+								? 'No. SPB protegerá toda la huella contra minería de jugadores.'
 								: 'Sí. Esta colocación no tendrá protección de bloques.'}
 						</p>
 					</div>
@@ -903,6 +1007,40 @@
 						onCheckedChange={(checked) => (protectBlocks = !checked)}
 						disabled={!includeBlocks}
 						aria-label="Bloques se rompen"
+					/>
+				</div>
+				<div class="flex items-center justify-between gap-4 rounded-md border p-4 md:col-span-3">
+					<div class="grid gap-1">
+						<Label for="allow-place-blocks">Jugadores pueden colocar bloques</Label>
+						<p class="text-sm text-muted-foreground">
+							{includeBlocks && protectPlace
+								? 'No. SPB bloqueará la colocación dentro de toda la región.'
+								: 'Sí. Los jugadores podrán colocar bloques normalmente.'}
+						</p>
+					</div>
+					<Switch
+						id="allow-place-blocks"
+						checked={includeBlocks && !protectPlace}
+						onCheckedChange={(checked) => (protectPlace = !checked)}
+						disabled={!includeBlocks || environment === 'production'}
+						aria-label="Jugadores pueden colocar bloques"
+					/>
+				</div>
+				<div class="flex items-center justify-between gap-4 rounded-md border p-4 md:col-span-3">
+					<div class="grid gap-1">
+						<Label for="allow-environment-damage">Fuego, fluidos y explosiones afectan la región</Label>
+						<p class="text-sm text-muted-foreground">
+							{includeBlocks && protectEnvironment
+								? 'No. Se bloquearán ignición, cubetas y destrucción por explosiones dentro de la región.'
+								: 'Sí. La región conservará el comportamiento normal del mundo.'}
+						</p>
+					</div>
+					<Switch
+						id="allow-environment-damage"
+						checked={includeBlocks && !protectEnvironment}
+						onCheckedChange={(checked) => (protectEnvironment = !checked)}
+						disabled={!includeBlocks || environment === 'production'}
+						aria-label="Fuego, fluidos y explosiones afectan la región"
 					/>
 				</div>
 				{#if pendingPlacement}<div
@@ -926,6 +1064,12 @@
 								{pendingPlacement.includeBlocks && pendingPlacement.protectBlocks
 									? ' Los bloques de esta colocación quedarán protegidos.'
 									: ' Sus bloques podrán romperse normalmente.'}
+								{pendingPlacement.includeBlocks && pendingPlacement.protectPlace
+									? ' No se permitirá colocar bloques dentro de la región.'
+									: ' Se permitirá colocar bloques normalmente.'}
+								{pendingPlacement.includeBlocks && pendingPlacement.protectEnvironment
+									? ' La región quedará protegida contra ignición, fluidos y explosiones.'
+									: ' Fuego, fluidos y explosiones conservarán su comportamiento normal.'}
 							</p>
 						</div>
 						<div class="flex flex-wrap gap-2">
@@ -948,6 +1092,59 @@
 					><MapPinned /> Revisar colocación</Button
 				></Card.Footer
 			></Card.Root
-		>
+		>{:else}<Card.Root class="border-destructive/40"
+			><Card.Header
+				><Card.Title>Borrar un área en Staging</Card.Title><Card.Description
+					>Convierte toda el área en aire y elimina las protecciones de estructuras que la
+					intersecten. X, Y y Z son la esquina mínima del volumen.</Card.Description
+				></Card.Header
+			><Card.Content class="grid gap-4 md:grid-cols-3"
+				><div class="grid gap-2">
+					<Label for="erase-x">X inicial</Label><Input id="erase-x" bind:value={x} inputmode="numeric" />
+				</div>
+				<div class="grid gap-2">
+					<Label for="erase-y">Y inicial</Label><Input id="erase-y" bind:value={y} inputmode="numeric" />
+				</div>
+				<div class="grid gap-2">
+					<Label for="erase-z">Z inicial</Label><Input id="erase-z" bind:value={z} inputmode="numeric" />
+				</div>
+				<div class="grid gap-2">
+					<Label for="erase-width">Ancho (X)</Label><Input id="erase-width" bind:value={eraseWidth} inputmode="numeric" />
+				</div>
+				<div class="grid gap-2">
+					<Label for="erase-height">Alto (Y)</Label><Input id="erase-height" bind:value={eraseHeight} inputmode="numeric" />
+				</div>
+				<div class="grid gap-2">
+					<Label for="erase-depth">Profundidad (Z)</Label><Input id="erase-depth" bind:value={eraseDepth} inputmode="numeric" />
+				</div>
+				<p class="text-sm text-muted-foreground md:col-span-3">
+					Máximo: 512 bloques por eje y 8,000,000 de bloques por operación. SPB cargará
+					temporalmente la huella completa antes de borrar.
+				</p>
+				{#if pendingErase}<div
+						class="grid gap-3 rounded-md border border-destructive/50 bg-destructive/5 p-4 md:col-span-3"
+					>
+						<div class="space-y-1">
+							<p class="font-medium">Confirmar borrado irreversible</p>
+							<p class="text-sm text-muted-foreground">
+								Se reemplazarán por aire <strong>{pendingErase.width} × {pendingErase.height} × {pendingErase.depth}</strong>
+								bloques desde <strong>{pendingErase.x}, {pendingErase.y}, {pendingErase.z}</strong>.
+							</p>
+						</div>
+						<div class="flex flex-wrap gap-2">
+							<Button variant="outline" onclick={() => (pendingErase = null)} disabled={erasing}>Cancelar</Button>
+							<Button variant="destructive" onclick={() => void eraseArea()} disabled={erasing}
+								>{#if erasing}<LoaderCircle class="animate-spin" /> Borrando área…{:else}Confirmar y borrar{/if}</Button
+							>
+						</div>
+					</div>{/if}</Card.Content
+			><Card.Footer
+				><Button
+					variant="destructive"
+					onclick={prepareErase}
+					disabled={erasing || !!pendingErase || !eraseRequest()}>Revisar borrado</Button
+				></Card.Footer
+			></Card.Root
+		>{/if}
 	</div>
 </main>

@@ -110,6 +110,10 @@ export const POST: RequestHandler = async ({ request }) => {
 		const includeBlocks = body.includeBlocks !== false;
 		const includeAir = body.includeAir !== false;
 		const protectBlocks = body.protectBlocks === true;
+		const protectPlace = body.protectPlace === true;
+		const protectEnvironment = body.protectEnvironment === true;
+		if (environment === 'production' && (protectPlace || protectEnvironment))
+			throw new Error('Las protecciones nuevas sólo están habilitadas en Staging hasta completar su validación.');
 		const anchor = (ANCHORS.has(body.anchor) ? body.anchor : 'center') as StructureAnchor;
 		if (body.confirmed !== true) throw new Error('Confirma la colocación antes de continuar.');
 		const stored = await describeStoredStructure(name);
@@ -148,6 +152,8 @@ export const POST: RequestHandler = async ({ request }) => {
 					includeBlocks,
 					includeAir,
 					protectBlocks,
+					protectPlace,
+					protectEnvironment,
 					dimensions: structure.dimensions
 				})
 			});

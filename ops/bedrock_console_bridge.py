@@ -16,6 +16,7 @@ import os
 import re
 import shutil
 import signal
+import struct
 import subprocess
 import sys
 import tempfile
@@ -113,6 +114,20 @@ def parse_server_properties(path: Path) -> dict[str, str]:
     return values
 
 
+def read_world_seed(root: Path) -> str:
+    """Read the active Bedrock world's signed 64-bit seed from level.dat."""
+    properties = parse_server_properties(root / SERVER_PROPERTIES_FILE)
+    world_name = properties.get("level-name", "")
+    if not world_name or "/" in world_name or "\\" in world_name:
+        raise ValueError("El nombre del mundo activo no es válido.")
+    level_data = (root / "worlds" / world_name / "level.dat").read_bytes()
+    marker = b"\x04\x0a\x00RandomSeed"
+    offset = level_data.find(marker)
+    if offset < 0 or offset + len(marker) + 8 > len(level_data):
+        raise ValueError("No se encontró la seed del mundo activo.")
+    return str(struct.unpack_from("<q", level_data, offset + len(marker))[0])
+
+
 def validate_property_value(key: str, value: object) -> str:
     spec = SERVER_PROPERTY_SPECS.get(key)
     if spec is None:
@@ -188,13 +203,15 @@ def validate_world_reset_request(root: Path, value: object) -> dict[str, str]:
     current = parse_server_properties(root / SERVER_PROPERTIES_FILE).get("level-name", "")
     if not current or confirmation != current:
         raise ValueError("Escribe exactamente el nombre del mundo actual para confirmar.")
-    if mode not in {"random", "seed"}:
-        raise ValueError("Elige seed aleatoria o seed personalizada.")
+    if mode not in {"random", "seed", "preserve"}:
+        raise ValueError("Elige conservar, generar o escribir la seed.")
     if not isinstance(seed, str) or len(seed) > 64 or any(char in seed for char in ("\r", "\n", "\0")):
         raise ValueError("La seed no es válida.")
     if mode == "seed" and not seed.strip():
         raise ValueError("Escribe una seed para crear el mundo.")
-    return {"mode": mode, "seed": seed.strip() if mode == "seed" else "", "world": current}
+    if mode == "preserve":
+        seed = read_world_seed(root)
+    return {"mode": mode, "seed": seed.strip() if mode in {"seed", "preserve"} else "", "world": current}
 
 
 def request_world_reset(root: Path, value: object) -> str:
@@ -745,6 +762,8 @@ class BedrockConsoleBridge:
         include_blocks = request.get("includeBlocks", True)
         include_air = request.get("includeAir", True)
         protect_blocks = request.get("protectBlocks", False)
+        protect_place = request.get("protectPlace", False)
+        protect_environment = request.get("protectEnvironment", False)
         if rotation not in {"0_degrees", "90_degrees", "180_degrees", "270_degrees"}:
             raise ValueError("La rotación no es válida.")
         if mirror not in {"none", "x", "z", "xz"}:
@@ -757,6 +776,10 @@ class BedrockConsoleBridge:
             raise ValueError("La opción de incluir aire no es válida.")
         if not isinstance(protect_blocks, bool):
             raise ValueError("La opción de proteger bloques no es válida.")
+        if not isinstance(protect_place, bool):
+            raise ValueError("La opción de impedir colocar bloques no es válida.")
+        if not isinstance(protect_environment, bool):
+            raise ValueError("La protección de fuego y fluidos no es válida.")
 
         corners = [(0, 0), (width - 1, 0), (0, depth - 1), (width - 1, depth - 1)]
         transformed: list[tuple[int, int]] = []
@@ -797,6 +820,8 @@ class BedrockConsoleBridge:
                 "includeBlocks": include_blocks,
                 "includeAir": include_air,
                 "protectBlocks": protect_blocks,
+                "protectPlace": protect_place,
+                "protectEnvironment": protect_environment,
             },
             separators=(",", ":"),
         )
@@ -817,6 +842,57 @@ class BedrockConsoleBridge:
             "structure": identifier,
             "dimensions": {"x": width, "y": height, "z": depth},
             "area": {"from": {"x": min_x, "z": min_z}, "to": {"x": max_x, "z": max_z}},
+        }
+
+    def erase_area(self, request: object) -> dict[str, Any]:
+        if not isinstance(request, dict):
+            raise ValueError("Solicitud de borrado inválida.")
+        coordinates = tuple(request.get(axis) for axis in ("x", "y", "z"))
+        dimensions = tuple(request.get(axis) for axis in ("width", "height", "depth"))
+        if any(not isinstance(value, int) or isinstance(value, bool) for value in coordinates + dimensions):
+            raise ValueError("Las coordenadas y dimensiones deben ser enteros.")
+        x, y, z = coordinates
+        width, height, depth = dimensions
+        if any(value < -29_999_984 or value > 29_999_984 for value in coordinates):
+            raise ValueError("Las coordenadas están fuera del mundo permitido.")
+        if any(value < 1 or value > 512 for value in dimensions) or width * height * depth > 8_000_000:
+            raise ValueError("El área supera el límite seguro de 8,000,000 de bloques.")
+        request_id = uuid.uuid4().hex[:12]
+        payload = json.dumps(
+            {
+                "request": request_id,
+                "x": x,
+                "y": y,
+                "z": z,
+                "minX": x,
+                "maxX": x + width - 1,
+                "minZ": z,
+                "maxZ": z + depth - 1,
+                "width": width,
+                "height": height,
+                "depth": depth,
+            },
+            separators=(",", ":"),
+        )
+        command = f"scriptevent spb:structure_erase {payload}"
+        success = re.compile(rf"SPB_STRUCTURE_ERASE\s+{request_id}\s+OK\b")
+        failure = re.compile(
+            rf"SPB_STRUCTURE_ERASE\s+{request_id}\s+ERROR(?:\s+(?P<detail>.*))?$"
+        )
+        with self._query_lock:
+            self._command_until_result(
+                command,
+                success,
+                failure,
+                STRUCTURE_PLACEMENT_TIMEOUT_SECONDS,
+            )
+        return {
+            "ok": True,
+            "request": request_id,
+            "area": {
+                "from": {"x": x, "y": y, "z": z},
+                "to": {"x": x + width - 1, "y": y + height - 1, "z": z + depth - 1},
+            },
         }
 
     def list_players(self) -> dict[str, Any]:
@@ -980,13 +1056,15 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
         if parsed.path == "/properties":
             try:
                 values = parse_server_properties(self.bridge_server.bridge.root / SERVER_PROPERTIES_FILE)
-            except OSError as error:
+                world_seed = read_world_seed(self.bridge_server.bridge.root)
+            except (OSError, ValueError) as error:
                 self._send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": str(error)})
                 return
             self._send_json(
                 HTTPStatus.OK,
                 {
                     "environment": "staging",
+                    "worldSeed": world_seed,
                     "properties": {key: values.get(key, "") for key in SERVER_PROPERTY_SPECS},
                     "activeProperties": {
                         key: self.bridge_server.bridge.active_properties.get(key, "")
@@ -1063,6 +1141,7 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
             "/structures/import-complete",
             "/structures/import-abort",
             "/structures/place",
+            "/structures/erase",
         }:
             self._send_json(HTTPStatus.NOT_FOUND, {"error": "No existe esa ruta."})
             return
@@ -1133,6 +1212,9 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
                 return
             if path == "/structures/place":
                 self._send_json(HTTPStatus.OK, self.bridge_server.bridge.place_structure(body))
+                return
+            if path == "/structures/erase":
+                self._send_json(HTTPStatus.OK, self.bridge_server.bridge.erase_area(body))
                 return
             if path == "/world/reset":
                 operation = request_world_reset(self.bridge_server.bridge.root, body)

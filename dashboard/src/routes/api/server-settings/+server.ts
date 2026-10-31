@@ -28,16 +28,16 @@ export const GET: RequestHandler = async ({ request }) => {
 	if (environment === 'production') {
 		try {
 			const [result, gameRules, worldState] = await Promise.all([
-				bridgeRequest('production', '/properties') as Promise<{ properties?: typeof localProperties; activeProperties?: typeof localProperties; hasPendingChanges?: boolean }>,
+				bridgeRequest('production', '/properties') as Promise<{ properties?: typeof localProperties; activeProperties?: typeof localProperties; hasPendingChanges?: boolean; worldSeed?: string }>,
 				bridgeRequest('production', '/gamerules') as Promise<{ showCoordinates?: boolean; showDaysPlayed?: boolean }>,
 				bridgeRequest('production', '/world-state') as Promise<{ world?: string; savedDifficulty?: string; savedGamemode?: string }>
 			]);
-			return json({ environment, properties: result.properties ?? {}, activeProperties: result.activeProperties ?? result.properties ?? {}, hasPendingChanges: result.hasPendingChanges === true, gameRules, worldState });
+			return json({ environment, properties: result.properties ?? {}, activeProperties: result.activeProperties ?? result.properties ?? {}, hasPendingChanges: result.hasPendingChanges === true, gameRules, worldState, worldSeed: result.worldSeed ?? '' });
 		} catch (error) {
 			return json({ environment, error: error instanceof Error ? error.message : 'No se pudo leer la configuración de producción.' }, 503);
 		}
 	}
-	if (isLocalDevelopment()) return json({ environment: 'local-development', properties: localProperties, activeProperties: localProperties, gameRules: { showCoordinates: false, showDaysPlayed: false }, hasPendingChanges: false, restartRequired: true });
+	if (isLocalDevelopment()) return json({ environment: 'local-development', properties: localProperties, activeProperties: localProperties, gameRules: { showCoordinates: false, showDaysPlayed: false }, hasPendingChanges: false, restartRequired: true, worldSeed: '2841496551225756511' });
 	try {
 		const [properties, gameRules] = await Promise.all([
 			bridgeRequest('staging', '/properties'),

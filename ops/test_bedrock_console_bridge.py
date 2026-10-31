@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import bedrock_console_bridge as bridge_module
-from bedrock_console_bridge import BedrockConsoleBridge, OutputBuffer, parse_address, read_update_status, request_world_reset, validate_command, validate_structure_id
+from bedrock_console_bridge import BedrockConsoleBridge, OutputBuffer, parse_address, read_update_status, read_world_seed, request_world_reset, validate_command, validate_structure_id, validate_world_reset_request
 
 
 class ValidateCommandTests(unittest.TestCase):
@@ -70,6 +70,11 @@ class StructurePlacementTests(unittest.TestCase):
                 "rotation": "0_degrees",
                 "mirror": "none",
                 "mode": "instant",
+                "includeBlocks": True,
+                "includeAir": True,
+                "protectBlocks": False,
+                "protectPlace": False,
+                "protectEnvironment": False,
             },
         )
         self.assertEqual(result["area"], {"from": {"x": 10, "z": 20}, "to": {"x": 162, "z": 90}})
@@ -97,6 +102,47 @@ class StructurePlacementTests(unittest.TestCase):
         bridge = BedrockConsoleBridge(Path("."), OutputBuffer(), Path("unused.pid"))
         with self.assertRaises(ValueError):
             bridge.place_structure({"structure": "spb:angel", "x": 0, "y": 80, "z": 0})
+
+
+class StructureEraseTests(unittest.TestCase):
+    def test_delegates_a_bounded_erase_to_the_addon(self):
+        bridge = BedrockConsoleBridge(Path("."), OutputBuffer(), Path("unused.pid"))
+        bridge._command_until_result = Mock(return_value=[])
+        with patch.object(bridge_module.uuid, "uuid4", return_value=Mock(hex="0123456789abcdef")):
+            result = bridge.erase_area(
+                {"x": 10, "y": 60, "z": 20, "width": 12, "height": 8, "depth": 14}
+            )
+
+        command = bridge._command_until_result.call_args.args[0]
+        prefix, payload = command.split(" ", 2)[1:]
+        self.assertEqual(prefix, "spb:structure_erase")
+        self.assertEqual(
+            __import__("json").loads(payload),
+            {
+                "request": "0123456789ab",
+                "x": 10,
+                "y": 60,
+                "z": 20,
+                "minX": 10,
+                "maxX": 21,
+                "minZ": 20,
+                "maxZ": 33,
+                "width": 12,
+                "height": 8,
+                "depth": 14,
+            },
+        )
+        self.assertEqual(
+            result["area"],
+            {"from": {"x": 10, "y": 60, "z": 20}, "to": {"x": 21, "y": 67, "z": 33}},
+        )
+
+    def test_rejects_an_oversized_erase(self):
+        bridge = BedrockConsoleBridge(Path("."), OutputBuffer(), Path("unused.pid"))
+        with self.assertRaises(ValueError):
+            bridge.erase_area(
+                {"x": 0, "y": 0, "z": 0, "width": 512, "height": 512, "depth": 512}
+            )
 
 
 class StructureImportTests(unittest.TestCase):
@@ -170,6 +216,26 @@ class AddressTests(unittest.TestCase):
 
 
 class WorldResetPrivilegeTests(unittest.TestCase):
+    def test_reads_and_preserves_the_active_world_seed(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            world = root / "worlds" / "Forever World"
+            world.mkdir(parents=True)
+            (root / "server.properties").write_text("level-name=Forever World\n", encoding="utf-8")
+            seed = -2841496551225756511
+            (world / "level.dat").write_bytes(
+                b"\x08\x00\x00\x00" + b"\x00" * 12 + b"\x04\x0a\x00RandomSeed" + __import__("struct").pack("<q", seed)
+            )
+
+            self.assertEqual(read_world_seed(root), str(seed))
+            self.assertEqual(
+                validate_world_reset_request(
+                    root,
+                    {"mode": "preserve", "seed": "", "confirmation": "Forever World"},
+                ),
+                {"mode": "preserve", "seed": str(seed), "world": "Forever World"},
+            )
+
     def test_sudoers_allows_the_command_used_by_the_bridge(self):
         rule = (Path(__file__).parent / "sudoers" / "spb-staging-world-reset").read_text(encoding="utf-8")
         with TemporaryDirectory() as directory:

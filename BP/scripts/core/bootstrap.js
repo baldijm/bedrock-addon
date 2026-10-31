@@ -73,7 +73,7 @@ world.beforeEvents.playerBreakBlock.subscribe((event) => {
 });
 world.beforeEvents.playerInteractWithBlock.subscribe((event) => {
     const { player, itemStack } = event;
-    if (!event.isFirstEvent || !puedeUsarCreativePlus(player) || !itemStack)
+    if (event.cancel || !event.isFirstEvent || !puedeUsarCreativePlus(player) || !itemStack)
         return;
     if (reemplazarBloqueEnSiguienteTick(event.block, event.block.dimension, itemStack)) {
         event.cancel = true;
