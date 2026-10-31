@@ -379,22 +379,6 @@ function commandAreaSegments(request: AreaRequest): CommandAreaSegment[] {
   return segments;
 }
 
-function areaIsLoaded(
-  dimension: Dimension,
-  request: AreaRequest,
-  segment: CommandAreaSegment
-): boolean {
-  try {
-    return Boolean(dimension.getBlock({
-      x: segment.from.x, y: request.y, z: segment.from.z
-    })) && Boolean(dimension.getBlock({
-      x: segment.to.x, y: request.y, z: segment.to.z
-    }));
-  } catch {
-    return false;
-  }
-}
-
 async function createPlacementAreas(
   dimension: Dimension,
   request: AreaRequest,
@@ -424,14 +408,11 @@ async function createPlacementAreas(
       commandAreaIds.push(id);
       await system.waitTicks(1);
     }
-
-    for (let attempt = 0; attempt < 120; attempt += 1) {
-      if (segments.every(segment => areaIsLoaded(dimension, request, segment))) {
-        return { managerAreaId: undefined, commandAreaIds };
-      }
-      await system.waitTicks(10);
-    }
-    throw new Error('Bedrock no terminó de cargar las áreas temporales a tiempo');
+    // The command's preload flag is the authoritative readiness signal. Script
+    // getBlock checks for remote chunks can remain undefined indefinitely even
+    // after Bedrock accepted the ticking area, creating a false timeout.
+    await system.waitTicks(20);
+    return { managerAreaId: undefined, commandAreaIds };
   } catch (error) {
     await removeCommandAreas(dimension, commandAreaIds, 'SPB_STRUCTURE_AREA');
     throw error;
