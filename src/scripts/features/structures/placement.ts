@@ -215,17 +215,40 @@ function blockState(dimension: ReturnType<typeof world.getDimension>, location: 
   return `${block.typeId}:${JSON.stringify(block.permutation.getAllStates())}`;
 }
 
-function snapshot(dimension: ReturnType<typeof world.getDimension>, request: PlacementRequest) {
+function snapshot(
+  dimension: ReturnType<typeof world.getDimension>,
+  request: PlacementRequest
+): Promise<Map<string, string>> {
   const locations = new Map<string, { x: number; y: number; z: number }>();
-  for (const localX of samples(request.width, 10)) {
-    for (const localY of samples(request.height, 8)) {
-      for (const localZ of samples(request.depth, 10)) {
+  // Remote chunks can make an individual block lookup expensive. Keep the
+  // verification sample small and yield while reading it so the watchdog never
+  // sees this as one long-running script callback.
+  for (const localX of samples(request.width, 5)) {
+    for (const localY of samples(request.height, 4)) {
+      for (const localZ of samples(request.depth, 5)) {
         const location = transformedLocation(request, localX, localY, localZ);
         locations.set(`${location.x},${location.y},${location.z}`, location);
       }
     }
   }
-  return [...locations.entries()].map(([key, location]) => [key, blockState(dimension, location)] as const);
+
+  return new Promise((resolve, reject) => {
+    function* capture() {
+      try {
+        const states = new Map<string, string>();
+        let inspected = 0;
+        for (const [key, location] of locations) {
+          states.set(key, blockState(dimension, location));
+          inspected += 1;
+          if (inspected % 4 === 0) yield;
+        }
+        resolve(states);
+      } catch (error: unknown) {
+        reject(error);
+      }
+    }
+    system.runJob(capture());
+  });
 }
 
 function isAir(permutation: BlockPermutation | undefined) {
@@ -280,6 +303,23 @@ type CommandAreaSegment = {
   from: { x: number; z: number };
   to: { x: number; z: number };
 };
+
+async function removeCommandAreas(
+  dimension: Dimension,
+  ids: readonly string[],
+  markerName: string
+): Promise<void> {
+  for (const id of ids) {
+    try {
+      dimension.runCommand(`tickingarea remove ${id}`);
+      // Ticking-area commands are queued by Bedrock. Let each removal settle
+      // before issuing the next one so a failed placement cannot leak areas.
+      await system.waitTicks(1);
+    } catch (error: unknown) {
+      console.warn(`${markerName}_CLEANUP ${id} ${String(error)}`);
+    }
+  }
+}
 
 const MAX_COMMAND_TICKING_AREAS = 10;
 const MAX_CHUNKS_PER_COMMAND_AREA = 100;
@@ -393,13 +433,7 @@ async function createPlacementAreas(
     }
     throw new Error('Bedrock no terminó de cargar las áreas temporales a tiempo');
   } catch (error) {
-    for (const id of commandAreaIds) {
-      try {
-        dimension.runCommand(`tickingarea remove ${id}`);
-      } catch {
-        // Conservar el error original.
-      }
-    }
+    await removeCommandAreas(dimension, commandAreaIds, 'SPB_STRUCTURE_AREA');
     throw error;
   }
 }
@@ -456,13 +490,7 @@ async function eraseAfterLoading(message: string): Promise<void> {
         console.warn(`SPB_STRUCTURE_ERASE_CLEANUP ${areaId} ${String(error)}`);
       }
     }
-    for (const id of commandAreaIds) {
-      try {
-        world.getDimension('overworld').runCommand(`tickingarea remove ${id}`);
-      } catch (error: unknown) {
-        console.warn(`SPB_STRUCTURE_ERASE_CLEANUP ${id} ${String(error)}`);
-      }
-    }
+    await removeCommandAreas(world.getDimension('overworld'), commandAreaIds, 'SPB_STRUCTURE_ERASE');
   }
 }
 
@@ -480,7 +508,7 @@ async function placeAfterLoading(message: string): Promise<void> {
     areaId = placementAreas.managerAreaId;
     commandAreaIds = placementAreas.commandAreaIds;
     const placement = PLACEMENT_MODES[request.mode];
-    const before = request.includeBlocks ? new Map(snapshot(dimension, request)) : undefined;
+    const before = request.includeBlocks ? await snapshot(dimension, request) : undefined;
     let structure: string = request.structure;
     if (request.includeBlocks && !request.includeAir) {
       const noAir = makeNoAirVariant(request);
@@ -509,7 +537,8 @@ async function placeAfterLoading(message: string): Promise<void> {
     await system.waitTicks(Math.max(40, placement.animationSeconds * 20 + 2));
     // Entity-only loads deliberately leave the world blocks unchanged, so a
     // block snapshot cannot be used as their completion signal.
-    const changed = !before || snapshot(dimension, request).some(([key, state]) => before.get(key) !== state);
+    const after = request.includeBlocks ? await snapshot(dimension, request) : undefined;
+    const changed = !before || !after || [...after].some(([key, state]) => before.get(key) !== state);
     if (!changed) {
       marker(
         request.request,
@@ -551,13 +580,7 @@ async function placeAfterLoading(message: string): Promise<void> {
         console.warn(`SPB_STRUCTURE_PLACE_CLEANUP ${areaId} ${String(error)}`);
       }
     }
-    for (const id of commandAreaIds) {
-      try {
-        world.getDimension('overworld').runCommand(`tickingarea remove ${id}`);
-      } catch (error: unknown) {
-        console.warn(`SPB_STRUCTURE_PLACE_CLEANUP ${id} ${String(error)}`);
-      }
-    }
+    await removeCommandAreas(world.getDimension('overworld'), commandAreaIds, 'SPB_STRUCTURE_PLACE');
   }
 }
 
