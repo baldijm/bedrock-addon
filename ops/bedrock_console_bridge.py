@@ -830,7 +830,21 @@ class BedrockConsoleBridge:
         failure = re.compile(
             rf"SPB_STRUCTURE_PLACE\s+{request_id}\s+(?:ERROR|UNCONFIRMED)(?:\s+(?P<detail>.*))?$"
         )
+        readiness_id = uuid.uuid4().hex[:12]
+        readiness_payload = json.dumps(
+            {"request": readiness_id, "structure": identifier}, separators=(",", ":")
+        )
+        readiness_success = re.compile(rf"SPB_STRUCTURE_READY\s+{readiness_id}\s+OK\b")
+        readiness_failure = re.compile(
+            rf"SPB_STRUCTURE_READY\s+{readiness_id}\s+ERROR(?:\s+(?P<detail>.*))?$"
+        )
         with self._query_lock:
+            self._command_until_result(
+                f"scriptevent spb:structure_ready {readiness_payload}",
+                readiness_success,
+                readiness_failure,
+                STRUCTURE_COMMAND_TIMEOUT_SECONDS,
+            )
             self._command_until_result(
                 command,
                 success,

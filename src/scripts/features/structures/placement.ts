@@ -565,14 +565,43 @@ async function placeAfterLoading(message: string): Promise<void> {
   }
 }
 
+function confirmStructureReady(message: string): void {
+  let request = 'unknown';
+  try {
+    const payload: unknown = JSON.parse(message);
+    if (!payload || typeof payload !== 'object') throw new Error('solicitud inválida');
+    const input = payload as { request?: unknown; structure?: unknown };
+    if (typeof input.request !== 'string' || !/^[a-z0-9]{8,32}$/.test(input.request)) {
+      throw new Error('solicitud inválida');
+    }
+    request = input.request;
+    if (typeof input.structure !== 'string' || !IDENTIFIER.test(input.structure)) {
+      throw new Error('identificador inválido');
+    }
+    if (!world.structureManager.get(input.structure)) {
+      throw new Error('Structure does not exist. Activa las estructuras en Staging y espera el reinicio completo.');
+    }
+    console.warn(`SPB_STRUCTURE_READY ${request} OK`);
+  } catch (error: unknown) {
+    console.warn(
+      `SPB_STRUCTURE_READY ${request} ERROR ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+}
+
 system.afterEvents.scriptEventReceive.subscribe(
   (event) => {
-    if (event.id !== 'spb:structure_place' && event.id !== 'spb:structure_erase') return;
+    if (
+      event.id !== 'spb:structure_place' &&
+      event.id !== 'spb:structure_erase' &&
+      event.id !== 'spb:structure_ready'
+    ) return;
     if (event.sourceType !== ScriptEventSource.Server) {
       console.warn('SPB_STRUCTURE_PLACE_REJECTED source must be the dedicated server console');
       return;
     }
     if (event.id === 'spb:structure_erase') void eraseAfterLoading(event.message);
+    else if (event.id === 'spb:structure_ready') confirmStructureReady(event.message);
     else void placeAfterLoading(event.message);
   },
   { namespaces: ['spb'] }
