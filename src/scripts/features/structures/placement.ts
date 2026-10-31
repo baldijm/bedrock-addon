@@ -281,17 +281,49 @@ type CommandAreaSegment = {
   to: { x: number; z: number };
 };
 
+const MAX_COMMAND_TICKING_AREAS = 10;
+const MAX_CHUNKS_PER_COMMAND_AREA = 100;
+
 function commandAreaSegments(request: AreaRequest): CommandAreaSegment[] {
   const minChunkX = Math.floor(request.minX / 16);
   const maxChunkX = Math.floor(request.maxX / 16);
   const minChunkZ = Math.floor(request.minZ / 16);
   const maxChunkZ = Math.floor(request.maxZ / 16);
+  const chunkWidth = maxChunkX - minChunkX + 1;
+  const chunkDepth = maxChunkZ - minChunkZ + 1;
+
+  // The command API permits up to ten ticking areas of one hundred chunks each.
+  // Pick the tiling that uses the fewest areas instead of the former fixed 4x10
+  // tiles, which unnecessarily rejected wide-but-valid structures.
+  let chunkSpanX = 1;
+  let chunkSpanZ = 1;
+  let minimumAreaCount = Number.POSITIVE_INFINITY;
+  for (let candidateZ = 1; candidateZ <= Math.min(chunkDepth, MAX_CHUNKS_PER_COMMAND_AREA); candidateZ += 1) {
+    const candidateX = Math.min(
+      chunkWidth,
+      Math.floor(MAX_CHUNKS_PER_COMMAND_AREA / candidateZ)
+    );
+    const areaCount = Math.ceil(chunkWidth / candidateX) * Math.ceil(chunkDepth / candidateZ);
+    if (areaCount < minimumAreaCount) {
+      minimumAreaCount = areaCount;
+      chunkSpanX = candidateX;
+      chunkSpanZ = candidateZ;
+    }
+  }
+
+  if (minimumAreaCount > MAX_COMMAND_TICKING_AREAS) {
+    throw new Error(
+      `la huella abarca ${chunkWidth * chunkDepth} chunks y no cabe en las ` +
+      `${MAX_COMMAND_TICKING_AREAS} áreas temporales de ${MAX_CHUNKS_PER_COMMAND_AREA} chunks de Bedrock`
+    );
+  }
+
   const segments: CommandAreaSegment[] = [];
 
-  for (let chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ += 10) {
-    for (let chunkX = minChunkX; chunkX <= maxChunkX; chunkX += 4) {
-      const endChunkX = Math.min(maxChunkX, chunkX + 3);
-      const endChunkZ = Math.min(maxChunkZ, chunkZ + 9);
+  for (let chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ += chunkSpanZ) {
+    for (let chunkX = minChunkX; chunkX <= maxChunkX; chunkX += chunkSpanX) {
+      const endChunkX = Math.min(maxChunkX, chunkX + chunkSpanX - 1);
+      const endChunkZ = Math.min(maxChunkZ, chunkZ + chunkSpanZ - 1);
       segments.push({
         from: {
           x: Math.max(request.minX, chunkX * 16),
@@ -340,11 +372,6 @@ async function createPlacementAreas(
   }
 
   const segments = commandAreaSegments(request);
-  if (segments.length > 10) {
-    throw new Error(
-      `la estructura requiere ${segments.length} áreas temporales; Bedrock permite como máximo 10`
-    );
-  }
 
   const commandAreaIds: string[] = [];
   try {
