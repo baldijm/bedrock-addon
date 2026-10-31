@@ -6,7 +6,9 @@ import {
 	validateStructureName
 } from '#lib/server/structures';
 
-export const MIN_STRUCTURE_UPLOAD_BYTES = 1 * 1024 * 1024;
+// Multipart uploads may consist of a single final part, so small valid
+// .mcstructure files must not be rejected just because they are below 1 MiB.
+export const MIN_STRUCTURE_UPLOAD_BYTES = 1;
 export const MAX_STRUCTURE_UPLOAD_BYTES = 150 * 1024 * 1024;
 export const DEFAULT_STRUCTURE_UPLOAD_BYTES = 20 * 1024 * 1024;
 
