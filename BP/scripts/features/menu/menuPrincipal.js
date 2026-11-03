@@ -1,31 +1,24 @@
 import { GameMode, world } from '@minecraft/server';
 import { ActionFormData } from '@minecraft/server-ui';
 import { ModalFormData } from '@minecraft/server-ui';
-import { establecerCreativePlus, establecerPuntosPorEliminacion, establecerPvpActivo, obtenerCreativePlus, obtenerPuntosPorEliminacion, obtenerPvpActivo } from '../../global/configuracion.js';
+import { establecerCreativePlus, establecerEntregaMenuInicial, establecerPuntosPorEliminacion, establecerPvpActivo, obtenerCreativePlus, obtenerEntregaMenuInicial, obtenerPuntosPorEliminacion, obtenerPvpActivo } from '../../global/configuracion.js';
 import { DURACION_SOLICITUD_PVP_MS, crearSolicitudPvp, obtenerSolicitudesPvp, responderSolicitudPvp } from '../pvp/pvp.js';
 import { hayPartidaArenaActiva, iniciarPartidaArena } from '../games/arenaPvp.js';
 import { DURACION_SOLICITUD_TPA_MS, crearSolicitudTpa, obtenerSolicitudesTpa, responderSolicitudTpa } from '../teleport/tpa.js';
-import { teletransportarAleatoriamente } from '../teleport/tpr.js';
-import { obtenerRankingCompleto, obtenerResumenJugador } from '../../global/ranking.js';
+import { obtenerRankingCompleto } from '../../global/ranking.js';
 function esAdministrador(player) {
     return player.hasTag('op');
 }
 export function abrirMenuPrincipal(player) {
-    const { puntos, puesto } = obtenerResumenJugador(player);
     const pvpActivo = obtenerPvpActivo();
     const form = new ActionFormData()
         .title('§lSecret Kingdom')
         .body([
         `§e${player.name}`,
-        '§f━━━━━━━━━━━━━━━━',
-        `§6Posición global: §f#${puesto}`,
-        `§bPuntos: §f${puntos}`
-    ].join('\n'))
-        .button('Ranking');
+        '§f━━━━━━━━━━━━━━━━'
+    ].join('\n'));
     if (pvpActivo)
         form.button('PvP');
-    form.button('TPA');
-    form.button('TPR');
     if (esAdministrador(player)) {
         form.button('Settings');
         form.button('Gamemode');
@@ -36,24 +29,8 @@ export function abrirMenuPrincipal(player) {
         if (respuesta.canceled)
             return;
         let indice = 0;
-        if (respuesta.selection === indice) {
-            abrirRanking(player);
-            return;
-        }
-        indice += 1;
         if (pvpActivo && respuesta.selection === indice) {
             abrirMenuPvp(player);
-            return;
-        }
-        if (pvpActivo)
-            indice += 1;
-        if (respuesta.selection === indice) {
-            abrirMenuTpa(player);
-            return;
-        }
-        indice += 1;
-        if (respuesta.selection === indice) {
-            teletransportarAleatoriamente(player);
             return;
         }
         indice += 1;
@@ -112,12 +89,14 @@ function abrirMenuSettings(player) {
     const puntosActuales = obtenerPuntosPorEliminacion();
     const creativePlusActivo = obtenerCreativePlus();
     const pvpActivo = obtenerPvpActivo();
+    const entregaMenuInicialActiva = obtenerEntregaMenuInicial();
     new ActionFormData()
         .title('§f§lSettings')
         .body('§fAdministra la configuración global del servidor.')
         .button(`§fPuntos por kill: §e${puntosActuales}`)
         .button(`§fCreative+: ${creativePlusActivo ? '§aActivo' : '§cInactivo'}`)
         .button(`§fPvP: ${pvpActivo ? '§aActivo' : '§cInactivo'}`)
+        .button(`§fEntregar menú a nuevos: ${entregaMenuInicialActiva ? '§aActivo' : '§cInactivo'}`)
         .button('Regresar')
         .show(player)
         .then((respuesta) => {
@@ -141,7 +120,14 @@ function abrirMenuSettings(player) {
             abrirMenuSettings(player);
             return;
         }
-        if (respuesta.selection === 3)
+        if (respuesta.selection === 3) {
+            const nuevoEstado = !entregaMenuInicialActiva;
+            establecerEntregaMenuInicial(nuevoEstado);
+            player.sendMessage(`§aEntrega automática del menú para jugadores nuevos ${nuevoEstado ? 'activada' : 'desactivada'}§a.`);
+            abrirMenuSettings(player);
+            return;
+        }
+        if (respuesta.selection === 4)
             abrirMenuPrincipal(player);
     })
         .catch((error) => player.sendMessage(`§cError al guardar settings: ${String(error)}`));

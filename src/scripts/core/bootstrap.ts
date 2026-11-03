@@ -1,7 +1,7 @@
 import { Block, BlockPermutation, Dimension, GameMode, ItemStack, Player, system, world } from '@minecraft/server';
 import '../features/combat/eliminaciones.js';
 import { dispararEnergia, esTriggerGun } from '../features/combat/habilidades.js';
-import { establecerCreativePlus, obtenerCreativePlus } from '../global/configuracion.js';
+import { establecerCreativePlus, obtenerCreativePlus, obtenerEntregaMenuInicial } from '../global/configuracion.js';
 import { actualizarResumenRanking, asegurarJugadorEnRanking } from '../global/ranking.js';
 import { abrirMenuPrincipal } from '../features/menu/menuPrincipal.js';
 import { isStructureProtected } from '../features/structures/protection.js';
@@ -44,7 +44,7 @@ world.afterEvents.playerSpawn.subscribe((event) => {
 
   system.run(() => {
     const esJugadorNuevo = asegurarJugadorEnRanking(event.player);
-    if (esJugadorNuevo) {
+    if (esJugadorNuevo && obtenerEntregaMenuInicial()) {
       const sobrante = event.player
         .getComponent('minecraft:inventory')
         ?.container?.addItem(new ItemStack('spb:menu'));

@@ -3,6 +3,7 @@ import { world } from '@minecraft/server';
 const PROPIEDAD_PUNTOS_ELIMINACION = 'spb:puntos_eliminacion';
 const PROPIEDAD_CREATIVE_PLUS = 'spb:creative_plus';
 const PROPIEDAD_PVP_ACTIVO = 'spb:pvp_activo';
+const PROPIEDAD_ENTREGAR_MENU_INICIAL = 'spb:entregar_menu_inicial';
 const PUNTOS_ELIMINACION_PREDETERMINADOS = 10;
 
 /** Devuelve los puntos que recibe un jugador al conseguir una eliminación. */
@@ -43,4 +44,17 @@ export function obtenerPvpActivo(): boolean {
 /** Guarda si los jugadores pueden iniciar retos PvP nuevos. */
 export function establecerPvpActivo(activo: boolean): void {
   world.setDynamicProperty(PROPIEDAD_PVP_ACTIVO, activo);
+}
+
+/** Controla si los jugadores nuevos reciben el menú SPB automáticamente. */
+export function obtenerEntregaMenuInicial(): boolean {
+  return world.getDynamicProperty(PROPIEDAD_ENTREGAR_MENU_INICIAL) === true;
+}
+
+/** Guarda si se entrega el menú SPB al primer ingreso de cada jugador. */
+export function establecerEntregaMenuInicial(activo: boolean): void {
+  if (typeof activo !== 'boolean') {
+    throw new Error('La entrega automática del menú debe ser activada o desactivada.');
+  }
+  world.setDynamicProperty(PROPIEDAD_ENTREGAR_MENU_INICIAL, activo);
 }

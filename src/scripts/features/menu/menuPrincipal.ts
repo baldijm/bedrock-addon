@@ -3,9 +3,11 @@ import { ActionFormData } from '@minecraft/server-ui';
 import { ModalFormData } from '@minecraft/server-ui';
 import {
   establecerCreativePlus,
+  establecerEntregaMenuInicial,
   establecerPuntosPorEliminacion,
   establecerPvpActivo,
   obtenerCreativePlus,
+  obtenerEntregaMenuInicial,
   obtenerPuntosPorEliminacion,
   obtenerPvpActivo
 } from '../../global/configuracion.js';
@@ -32,7 +34,6 @@ function esAdministrador(player: Player): boolean {
 }
 
 export function abrirMenuPrincipal(player: Player): void {
-  const { puntos, puesto } = obtenerResumenJugador(player);
   const pvpActivo = obtenerPvpActivo();
 
   const form = new ActionFormData()
@@ -40,16 +41,11 @@ export function abrirMenuPrincipal(player: Player): void {
     .body(
       [
         `§e${player.name}`,
-        '§f━━━━━━━━━━━━━━━━',
-        `§6Posición global: §f#${puesto}`,
-        `§bPuntos: §f${puntos}`
+        '§f━━━━━━━━━━━━━━━━'
       ].join('\n')
-    )
-    .button('Ranking');
+    );
 
   if (pvpActivo) form.button('PvP');
-  form.button('TPA');
-  form.button('TPR');
 
   if (esAdministrador(player)) {
     form.button('Settings');
@@ -62,26 +58,9 @@ export function abrirMenuPrincipal(player: Player): void {
       if (respuesta.canceled) return;
 
       let indice = 0;
-      if (respuesta.selection === indice) {
-        abrirRanking(player);
-        return;
-      }
-      indice += 1;
 
       if (pvpActivo && respuesta.selection === indice) {
         abrirMenuPvp(player);
-        return;
-      }
-      if (pvpActivo) indice += 1;
-
-      if (respuesta.selection === indice) {
-        abrirMenuTpa(player);
-        return;
-      }
-      indice += 1;
-
-      if (respuesta.selection === indice) {
-        teletransportarAleatoriamente(player);
         return;
       }
       indice += 1;
@@ -143,6 +122,7 @@ function abrirMenuSettings(player: Player): void {
   const puntosActuales = obtenerPuntosPorEliminacion();
   const creativePlusActivo = obtenerCreativePlus();
   const pvpActivo = obtenerPvpActivo();
+  const entregaMenuInicialActiva = obtenerEntregaMenuInicial();
 
   new ActionFormData()
     .title('§f§lSettings')
@@ -150,6 +130,7 @@ function abrirMenuSettings(player: Player): void {
     .button(`§fPuntos por kill: §e${puntosActuales}`)
     .button(`§fCreative+: ${creativePlusActivo ? '§aActivo' : '§cInactivo'}`)
     .button(`§fPvP: ${pvpActivo ? '§aActivo' : '§cInactivo'}`)
+    .button(`§fEntregar menú a nuevos: ${entregaMenuInicialActiva ? '§aActivo' : '§cInactivo'}`)
     .button('Regresar')
     .show(player)
     .then((respuesta) => {
@@ -176,7 +157,14 @@ function abrirMenuSettings(player: Player): void {
         return;
       }
 
-      if (respuesta.selection === 3) abrirMenuPrincipal(player);
+      if (respuesta.selection === 3) {
+        const nuevoEstado = !entregaMenuInicialActiva;
+        establecerEntregaMenuInicial(nuevoEstado);
+        player.sendMessage(`§aEntrega automática del menú para jugadores nuevos ${nuevoEstado ? 'activada' : 'desactivada'}§a.`);
+        abrirMenuSettings(player);
+        return;
+      }
+      if (respuesta.selection === 4) abrirMenuPrincipal(player);
     })
     .catch((error: unknown) => player.sendMessage(`§cError al guardar settings: ${String(error)}`));
 }
