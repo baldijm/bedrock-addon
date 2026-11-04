@@ -19,9 +19,11 @@
 	const regionFields = [ ['bounds', 'Área segura y protegida'], ['goal1', 'Portería del jugador 1'], ['goal2', 'Portería del jugador 2'] ] as const;
 	const actionNames = { save: 'Guardar borrador', activate: 'Activar arena guardada', deactivate: 'Desactivar arena', delete: 'Eliminar borrador' };
 	const dirty = $derived(JSON.stringify(draft) !== JSON.stringify(catalog.arenas.find(item => item.id === selected)));
-	function edit(arena: Arena) { draft = structuredClone(arena); selected = arena.id; pending = ''; error = ''; notice = ''; }
+	// Reactive Svelte objects are Proxies; JSON cloning also works for those.
+	function clone(arena: Arena): Arena { return JSON.parse(JSON.stringify(arena)); }
+	function edit(arena: Arena) { draft = clone(arena); selected = arena.id; pending = ''; error = ''; notice = ''; }
 	function create() {
-		const arena = structuredClone(draft);
+		const arena = clone(draft);
 		arena.id = `arena-${Date.now().toString(36)}`; arena.name = 'Nueva arena';
 		draft = arena; selected = ''; pending = ''; error = ''; notice = '';
 	}
