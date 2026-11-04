@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
+import { randomUUID } from 'node:crypto';
 
 const messages = [];
 const properties = new Map();
@@ -88,4 +89,57 @@ result = await request({ action: 'deactivate', revision: 2 });
 assert.equal(result.state.active, null);
 assert.deepEqual(applied, ['principal', null]);
 assert.equal((await request({ action: 'delete', revision: 3, id: arena.id })).state.arenas.length, 0);
-console.log('PvP: schema, Unicode transport, persistence, revisions, activation failures, concurrency, source authorization, match lock and deletion passed.');
+context.setTimeout = setTimeout;
+context.crypto = { randomUUID };
+const destinations = [];
+const bridge = new vm.SyntheticModule(['consoleBridgeRequest'], function () {
+  this.setExport('consoleBridgeRequest', async (environment, path, options) => {
+    destinations.push(environment);
+    if (path === '/properties') return { properties: { 'level-name': 'Forever World' } };
+    if (path === '/commands') {
+      const cursor = messages.length;
+      const command = JSON.parse(options.body).command;
+      assert.ok(command.length <= 512);
+      assert.ok(!/[\r\n\0]/.test(command));
+      handler({ id: 'spb:pvp_admin', sourceType: 'server', message: command.replace('scriptevent spb:pvp_admin ', '') });
+      return { outputCursor: cursor };
+    }
+    const cursor = Number(new URL(path, 'http://bridge').searchParams.get('after'));
+    return { cursor: messages.length, lines: messages.slice(cursor).map((text, index) => ({ id: cursor + index + 1, text })) };
+  });
+}, { context });
+await bridge.link(() => { throw new Error('Unexpected import'); }); await bridge.evaluate();
+async function dashboardModule(file, dependencies) {
+  const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2021 } }).outputText;
+  const module = new vm.SourceTextModule(code, { context });
+  await module.link(name => { assert.ok(dependencies[name], `Unexpected import: ${name}`); return dependencies[name]; });
+  await module.evaluate(); return module;
+}
+const transport = await dashboardModule('dashboard/src/lib/server/pvp-arenas.ts', { './bridge': bridge });
+const transported = await transport.namespace.arenaRequest('staging', { action: 'save', revision: 4, arena: unicode });
+assert.equal(transported.state.arenas[0].name, unicode.name, 'dashboard transport preserves Unicode across command and response chunks');
+let authenticated = true;
+let environment = 'staging';
+function synthetic(exports) {
+  return new vm.SyntheticModule(Object.keys(exports), function () { for (const [key, value] of Object.entries(exports)) this.setExport(key, value); }, { context });
+}
+const auth = synthetic({ isAuthenticated: async () => authenticated, json: (body, status = 200) => ({ body, status }), unauthorized: () => ({ status: 401 }) });
+const environmentModule = synthetic({ resolveEnvironment: () => environment });
+const api = await dashboardModule('dashboard/src/routes/api/pvp/arenas/+server.ts', {
+  '#lib/server/auth': auth, '#lib/server/environment': environmentModule,
+  '#lib/server/bridge': bridge, '#lib/server/pvp-arenas': transport, '#lib/pvp-arenas': cache.get('./arenaSchema.js'),
+});
+authenticated = false;
+assert.equal((await api.namespace.GET({ request: {} })).status, 401);
+assert.equal((await api.namespace.POST({ request: {} })).status, 401);
+authenticated = true; environment = 'production';
+const before = properties.get('spb:pvp_arenas_v1');
+let apiResult = await api.namespace.POST({ request: { text: async () => JSON.stringify({ action: 'save', revision: 5, arena: unicode, confirmation: 'wrong' }) } });
+assert.equal(apiResult.status, 400);
+assert.equal(properties.get('spb:pvp_arenas_v1'), before, 'wrong production confirmation cannot mutate the world');
+destinations.length = 0;
+apiResult = await api.namespace.GET({ request: {} });
+assert.equal(apiResult.status, 200);
+assert.equal(apiResult.body.world, 'Forever World');
+assert.ok(destinations.every(item => item === 'production'), 'environment selection is preserved through every bridge call');
+console.log('PvP: schema, persistence, revisions, activation failures, concurrency, source permissions, match lock, deletion, dashboard transport, API authentication and Production confirmation passed.');
