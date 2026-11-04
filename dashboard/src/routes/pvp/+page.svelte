@@ -19,6 +19,7 @@
 	const regionFields = [ ['bounds', 'Área segura y protegida'], ['goal1', 'Portería del jugador 1'], ['goal2', 'Portería del jugador 2'] ] as const;
 	const actionNames = { save: 'Guardar borrador', activate: 'Activar arena guardada', deactivate: 'Desactivar arena', delete: 'Eliminar borrador' };
 	const dirty = $derived(JSON.stringify(draft) !== JSON.stringify(catalog.arenas.find(item => item.id === selected)));
+	const lastSaved = $derived(catalog.history.find(item => item.action === 'save' && item.arena === selected));
 	// Reactive Svelte objects are Proxies; JSON cloning also works for those.
 	function clone(arena: Arena): Arena { return JSON.parse(JSON.stringify(arena)); }
 	function edit(arena: Arena) { draft = clone(arena); selected = arena.id; pending = ''; error = ''; notice = ''; }
@@ -58,7 +59,14 @@
 			if (action === 'delete') { const next = catalog.arenas[0]; if (next) edit(next); else create(); }
 			pending = ''; confirmation = '';
 			notice = action === 'save' ? 'Borrador guardado. Actívalo para utilizar estas coordenadas en las partidas.' : action === 'activate' ? 'Arena activada. Los NPC aparecerán únicamente durante el lobby de una partida.' : action === 'deactivate' ? 'Arena desactivada. No se pueden iniciar partidas.' : 'Borrador eliminado.';
-		} catch (reason) { error = reason instanceof Error ? reason.message : String(reason); }
+		} catch (reason) {
+			const detail = reason instanceof Error ? reason.message : String(reason);
+			error = `${actionNames[action]}: ${detail}`;
+			if (action === 'activate') notice = 'La arena no se activó. El borrador guardado se conserva; puedes seguir editándolo y guardar los ajustes.';
+			// End confirmation after failure too: otherwise pending disables the
+			// entire editor while its Cancel button sits below the viewport.
+			pending = ''; confirmation = '';
+		}
 		finally { working = ''; }
 	}
 	onMount(load);
@@ -77,6 +85,7 @@
 		<div class="rounded-lg border bg-card p-4">
 			<p class="font-medium">{environment === 'production' ? 'Producción' : 'Staging'} · {world}</p>
 			<p class="mt-1 text-sm">{catalog.active ? `Activa: ${catalog.active.name} (${catalog.active.id})` : 'Sin arena activa. Las partidas están deshabilitadas.'}</p>
+			{#if lastSaved}<p class="mt-2 text-sm text-muted-foreground">Borrador guardado: {new Date(lastSaved.at).toLocaleString()}. Activarlo es una operación independiente.</p>{/if}
 			{#if busy}<p class="mt-2 text-sm text-amber-500">Hay una partida o activación en curso. Actualiza al terminar para editar.</p>{/if}
 		</div>
 		<div class="grid items-start gap-6 md:grid-cols-[230px_1fr]">
@@ -100,7 +109,7 @@
 							<label class="text-sm">Orientación {key === 'npc1' ? 'NPC 1' : 'NPC 2'} (grados)<Input type="number" min={-180} max={180} bind:value={draft[key === 'npc1' ? 'yaw1' : 'yaw2']} /></label>
 						{/if}
 					{/each}
-					<p class="text-xs text-muted-foreground">Orientación: 0° → +Z · 90° → −X · 180° / −180° → −Z · −90° → +X. Las posiciones son los pies del jugador o NPC.</p>
+					<p class="text-xs text-muted-foreground">Orientación: 0° → +Z · 90° → −X · 180° / −180° → −Z · −90° → +X. Las posiciones son los pies del jugador o NPC: para Y = 204, el suelo debe estar en Y = 203 y debe haber aire en Y = 204 y 205.</p>
 					{#each regionFields as [key, label]}
 						<div class="rounded-md border p-3"><h3 class="mb-3 text-sm font-medium">{label}</h3>{@render regionEditor(draft[key])}</div>
 					{/each}

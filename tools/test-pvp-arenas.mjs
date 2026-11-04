@@ -159,4 +159,36 @@ environment = 'staging';
 apiResult = await api.namespace.POST({ request: { text: async () => JSON.stringify({ action: 'save', revision: 5, arena: reversed }) } });
 assert.equal(apiResult.status, 200, 'API accepts unordered corners and sends canonical bounds to the unchanged add-on');
 assert.equal(apiResult.body.state.arenas[0].goal2.min.x, -501);
+// Exercise the actual page's action handler. Svelte runes are plain values
+// here; no rendering is required to verify failure recovery and draft retention.
+const pageSource = fs.readFileSync('dashboard/src/routes/pvp/+page.svelte', 'utf8').match(/<script lang="ts">([\s\S]*?)<\/script>/)[1];
+context.$state = value => value;
+context.$derived = value => value;
+context.structuredClone = structuredClone;
+const pageModule = new vm.SourceTextModule(ts.transpileModule(pageSource + `
+  export function prepareTest(catalogValue, formValue, actionValue) {
+    catalog = catalogValue; draft = formValue; selected = formValue.id;
+    pending = actionValue; confirmation = 'Forever World';
+  }
+  export { apply, pending, working, error, notice, draft, catalog, confirmation };
+`, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2021 } }).outputText, { context });
+const svelte = synthetic({ onMount: () => {} });
+await pageModule.link(name => {
+  if (name === 'svelte') return svelte;
+  if (name === '#lib/pvp-arenas') return dashboardSchema;
+  throw new Error(`Unexpected page import: ${name}`);
+});
+await pageModule.evaluate();
+const savedCatalog = JSON.parse(JSON.stringify(apiResult.body.state));
+const form = structuredClone(arena);
+pageModule.namespace.prepareTest(savedCatalog, form, 'activate');
+context.fetch = async () => ({ ok: false, json: async () => ({ error: 'NPC1: falta suelo sólido o espacio libre en -504, 204, 127.' }) });
+await pageModule.namespace.apply();
+assert.equal(pageModule.namespace.pending, '', 'failed activation releases the editor confirmation lock');
+assert.equal(pageModule.namespace.working, '');
+assert.equal(pageModule.namespace.confirmation, '');
+assert.equal(pageModule.namespace.draft, form, 'failed activation does not discard form values');
+assert.equal(pageModule.namespace.catalog, savedCatalog, 'failed activation retains saved configuration');
+assert.match(pageModule.namespace.error, /^Activar arena guardada:/);
+assert.match(pageModule.namespace.notice, /borrador guardado se conserva/);
 console.log('PvP: schema, persistence, revisions, activation failures, concurrency, source permissions, match lock, deletion, dashboard transport, API authentication and Production confirmation passed.');

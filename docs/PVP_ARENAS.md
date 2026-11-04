@@ -22,6 +22,12 @@ La configuración puede cambiar sin reiniciar BDS ni publicar otro BP/RP.
 Al guardar cambios de una arena activa se conserva la versión activa anterior
 hasta volver a pulsar Activar arena.
 
+Si la activación falla, el borrador guardado se conserva y el editor se
+desbloquea para corregir posiciones. La pantalla identifica la operación fallida
+y muestra cuándo se guardó el último borrador de la arena seleccionada. Las
+posiciones de jugadores y NPCs indican los pies: para Y=204 se necesita suelo
+en Y=203 y aire en Y=204 y Y=205.
+
 ## Reglas
 
 - Hasta 12 arenas registradas; una activa y una partida simultánea.
