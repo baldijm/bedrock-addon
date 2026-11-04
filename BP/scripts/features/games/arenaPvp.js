@@ -189,10 +189,18 @@ function asegurarNpcs() {
     }
 }
 function quitarNpcs() {
-    const npcs = [
-        ...dimensionArena().getEntities({ type: 'minecraft:npc', location: NPC_ARENA_P1, maxDistance: 2 }),
-        ...dimensionArena().getEntities({ type: 'minecraft:npc', location: NPC_ARENA_P2, maxDistance: 2 }),
-    ];
+    // Incluye NPC que ya cayeron si el mapa aún no está construido, pero sólo
+    // en las dos columnas propias de la arena.
+    const npcs = dimensionArena().getEntities({
+        type: 'minecraft:npc',
+        // Cubre desde el fondo del mundo hasta por encima de la arena. Usar
+        // el centro de la arena (Y=204) no alcanzaba NPC que ya habían caído.
+        location: { x: -500, y: 100, z: 150 },
+        maxDistance: 300,
+    }).filter((npc) =>
+        [NPC_ARENA_P1, NPC_ARENA_P2].some((posicion) =>
+            Math.abs(npc.location.x - posicion.x) < 2 &&
+            Math.abs(npc.location.z - posicion.z) < 2));
     for (const npc of npcs) {
         try {
             npc.remove();
@@ -538,10 +546,10 @@ system.runInterval(() => {
         }
     }
 }, 1);
-// Fuera de una ronda los dos NPC son la entrada de la arena. Comprobamos una
-// vez por segundo para reparar una eliminación accidental, también en lobby.
+// Sólo el lobby necesita reparar NPC en caliente. Fuera de una partida no se
+// generan, para no producir entidades si la arena aún no está construida.
 system.runInterval(() => {
-    if (partida?.fase === 'jugando' || partida?.fase === 'esperando')
+    if (partida?.fase !== 'lobby')
         return;
     asegurarNpcs();
 }, 20);
@@ -549,8 +557,8 @@ system.runInterval(() => {
 // bloqueo de movimiento que pudiera haber quedado de una sesión anterior.
 system.run(() => {
     asegurarChunksArena();
+    quitarNpcs();
     for (const player of world.getPlayers())
         congelar(player, false);
-    system.runTimeout(asegurarNpcs, 10);
 });
 //# sourceMappingURL=arenaPvp.js.map
