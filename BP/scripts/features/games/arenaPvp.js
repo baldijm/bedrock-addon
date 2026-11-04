@@ -157,10 +157,12 @@ function obtenerRolNpc(entidad) {
         return 'p2';
     return undefined;
 }
-function asegurarNpcEn(posicion, nombre, id) {
+function asegurarNpcEn(posicion, nombre, id, rotacionY) {
     const existente = dimensionArena().getEntities({ type: 'minecraft:npc', location: posicion, maxDistance: 2 })[0];
     const npc = existente ?? dimensionArena().spawnEntity('minecraft:npc', posicion);
     npc.nameTag = nombre;
+    if (rotacionY !== undefined)
+        npc.setRotation({ x: 0, y: rotacionY });
     return npc.id ?? id;
 }
 function asegurarNpcs() {
@@ -169,7 +171,8 @@ function asegurarNpcs() {
     asegurarChunksArena();
     try {
         npcIds = {
-            p1: asegurarNpcEn(NPC_ARENA_P1, '§b§lArena PvP §f(Jugador 1)', npcIds.p1),
+            // Y=180 apunta hacia Z negativo; se reaplica al reparar el NPC.
+            p1: asegurarNpcEn(NPC_ARENA_P1, '§b§lArena PvP §f(Jugador 1)', npcIds.p1, 180),
             p2: asegurarNpcEn(NPC_ARENA_P2, '§b§lArena PvP §f(Jugador 2)', npcIds.p2),
         };
     }
@@ -535,6 +538,13 @@ system.runInterval(() => {
         }
     }
 }, 1);
+// Fuera de una ronda los dos NPC son la entrada de la arena. Comprobamos una
+// vez por segundo para reparar una eliminación accidental, también en lobby.
+system.runInterval(() => {
+    if (partida?.fase === 'jugando' || partida?.fase === 'esperando')
+        return;
+    asegurarNpcs();
+}, 20);
 // Una recarga del paquete no conserva una partida en memoria. Liberamos cualquier
 // bloqueo de movimiento que pudiera haber quedado de una sesión anterior.
 system.run(() => {

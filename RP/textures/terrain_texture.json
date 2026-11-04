@@ -9,7 +9,7 @@
       "textures": "textures/blocks/bloque_rojo"
     },
     "black_concrete_powder": {
-      "textures": "textures/blocks/concrete_powder_black"
+      "textures": "textures/blocks/spb_concrete_powder_black"
     },
     "brown_concrete_powder": {
       "textures": "textures/blocks/concrete_powder_brown"
