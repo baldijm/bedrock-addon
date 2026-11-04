@@ -1,25 +1,29 @@
 import { BlockTypes, GameMode, InputPermissionCategory, ItemStack, system, world, } from '@minecraft/server';
 import { ActionFormData } from '@minecraft/server-ui';
 import { obtenerPvpActivo } from '../../global/configuracion.js';
-const DIMENSION_ARENA = 'minecraft:overworld';
+import { arenaState, arenaChanging, installArenaControl } from './arenaControl.js';
+import { legacyArena } from './arenaSchema.js';
+let DIMENSION_ARENA = 'minecraft:overworld';
 const NOMBRE_TICKING_AREA_ARENA = 'spb_arena';
 const ESPERA_ENTRE_RONDAS_TICKS = 20 * 5;
 const PUNTOS_PARA_GANAR = 3;
-const NPC_ARENA_P1 = { x: -504, y: 204, z: 127 };
-const NPC_ARENA_P2 = { x: -496, y: 204, z: 174 };
-const POSICION_P1 = { x: -500, y: 204, z: 124 };
-const POSICION_P2 = { x: -500, y: 204, z: 177 };
-const POSICION_RETORNO_ARENA = { x: -500, y: 204, z: 150 };
-const AREA_SEGURA = {
+let NPC_ARENA_P1 = legacyArena.npc1;
+let NPC_ARENA_P2 = legacyArena.npc2;
+let POSICION_P1 = legacyArena.p1;
+let POSICION_P2 = legacyArena.p2;
+let POSICION_RETORNO_ARENA = legacyArena.returnPoint;
+let YAW_P1 = legacyArena.yaw1;
+let YAW_P2 = legacyArena.yaw2;
+let AREA_SEGURA = {
     min: { x: -515, y: 199, z: 104 },
     max: { x: -485, y: 320, z: 197 },
 };
 // Porterías con exactamente los mismos límites de los comandos del mapa.
-const PORTERIA_P2 = {
+let PORTERIA_P2 = {
     min: { x: -501, y: 201, z: 179 },
     max: { x: -499, y: 203, z: 182 },
 };
-const PORTERIA_P1 = {
+let PORTERIA_P1 = {
     min: { x: -501, y: 201, z: 120 },
     max: { x: -499, y: 203, z: 122 },
 };
@@ -90,7 +94,8 @@ function congelar(player, congelado) {
 }
 function teletransportarInicio(player, congelado) {
     try {
-        player.teleport(posicionInicial(player), { dimension: dimensionArena() });
+        const position = posicionInicial(player);
+        player.teleport({ ...position, x: position.x + 0.5, z: position.z + 0.5 }, { dimension: dimensionArena() });
         congelar(player, congelado);
     }
     catch {
@@ -126,12 +131,10 @@ function entregarBloques(player) {
 function limpiarCampo() {
     try {
         const dimension = dimensionArena();
-        const secciones = [
-            { minY: AREA_SEGURA.min.y, maxY: 189 },
-            { minY: 190, maxY: AREA_SEGURA.max.y },
-        ];
-        for (const seccion of secciones) {
-            const limites = `${AREA_SEGURA.min.x} ${seccion.minY} ${AREA_SEGURA.min.z} ${AREA_SEGURA.max.x} ${seccion.maxY} ${AREA_SEGURA.max.z}`;
+        const footprint = (AREA_SEGURA.max.x - AREA_SEGURA.min.x + 1) * (AREA_SEGURA.max.z - AREA_SEGURA.min.z + 1);
+        const height = Math.max(1, Math.floor(32768 / footprint));
+        for (let y = AREA_SEGURA.min.y; y <= AREA_SEGURA.max.y; y += height) {
+            const limites = `${AREA_SEGURA.min.x} ${y} ${AREA_SEGURA.min.z} ${AREA_SEGURA.max.x} ${Math.min(y + height - 1, AREA_SEGURA.max.y)} ${AREA_SEGURA.max.z}`;
             dimension.runCommand(`fill ${limites} air replace spb:bloque_verde`);
             dimension.runCommand(`fill ${limites} air replace spb:bloque_rojo`);
         }
@@ -141,7 +144,7 @@ function limpiarCampo() {
     }
 }
 function obtenerRolNpc(entidad) {
-    if (entidad.typeId !== 'minecraft:npc')
+    if (!partida || entidad.typeId !== 'minecraft:npc' || entidad.dimension.id !== DIMENSION_ARENA)
         return undefined;
     if (entidad.id === npcIds.p1)
         return 'p1';
@@ -157,23 +160,37 @@ function obtenerRolNpc(entidad) {
         return 'p2';
     return undefined;
 }
-function asegurarNpcEn(posicion, nombre, id, rotacionY) {
-    const existente = dimensionArena().getEntities({ type: 'minecraft:npc', location: posicion, maxDistance: 2 })[0];
-    const npc = existente ?? dimensionArena().spawnEntity('minecraft:npc', posicion);
+function asegurarNpcEn(posicion, nombre, id, yaw) {
+    const role = posicion === NPC_ARENA_P1 ? 'p1' : 'p2';
+    const tag = `spb:pvp_${role}`;
+    const dimension = dimensionArena();
+    const tagged = dimension.getEntities({ type: 'minecraft:npc', tags: [tag] });
+    for (const item of tagged) {
+        if (Math.hypot(item.location.x - posicion.x, item.location.y - posicion.y, item.location.z - posicion.z) > 2)
+            item.remove();
+    }
+    const existente = dimension.getEntities({ type: 'minecraft:npc', tags: [tag], location: posicion, maxDistance: 2 })[0];
+    const npc = existente ?? dimensionArena().spawnEntity('minecraft:npc', { ...posicion, x: posicion.x + 0.5, z: posicion.z + 0.5 });
+    npc.addTag(tag);
+    npc.setRotation({ x: 0, y: yaw });
     npc.nameTag = nombre;
-    if (rotacionY !== undefined)
-        npc.setRotation({ x: 0, y: rotacionY });
     return npc.id ?? id;
 }
 function asegurarNpcs() {
-    if (partida?.fase === 'jugando' || partida?.fase === 'esperando')
+    if (partida?.fase !== 'lobby')
         return;
+    try {
+        comprobarSuelo(arenaState().active);
+    }
+    catch {
+        cancelarPartida('faltan suelo o espacio seguros en la arena');
+        return;
+    }
     asegurarChunksArena();
     try {
         npcIds = {
-            // Y=180 apunta hacia Z negativo; se reaplica al reparar el NPC.
-            p1: asegurarNpcEn(NPC_ARENA_P1, '§b§lArena PvP §f(Jugador 1)', npcIds.p1, 180),
-            p2: asegurarNpcEn(NPC_ARENA_P2, '§b§lArena PvP §f(Jugador 2)', npcIds.p2),
+            p1: asegurarNpcEn(NPC_ARENA_P1, '§b§lArena PvP §f(Jugador 1)', npcIds.p1, YAW_P1),
+            p2: asegurarNpcEn(NPC_ARENA_P2, '§b§lArena PvP §f(Jugador 2)', npcIds.p2, YAW_P2),
         };
     }
     catch {
@@ -189,18 +206,10 @@ function asegurarNpcs() {
     }
 }
 function quitarNpcs() {
-    // Incluye NPC que ya cayeron si el mapa aún no está construido, pero sólo
-    // en las dos columnas propias de la arena.
-    const npcs = dimensionArena().getEntities({
-        type: 'minecraft:npc',
-        // Cubre desde el fondo del mundo hasta por encima de la arena. Usar
-        // el centro de la arena (Y=204) no alcanzaba NPC que ya habían caído.
-        location: { x: -500, y: 100, z: 150 },
-        maxDistance: 300,
-    }).filter((npc) =>
-        [NPC_ARENA_P1, NPC_ARENA_P2].some((posicion) =>
-            Math.abs(npc.location.x - posicion.x) < 2 &&
-            Math.abs(npc.location.z - posicion.z) < 2));
+    const npcs = [
+        ...dimensionArena().getEntities({ type: 'minecraft:npc', tags: ['spb:pvp_p1'] }),
+        ...dimensionArena().getEntities({ type: 'minecraft:npc', tags: ['spb:pvp_p2'] }),
+    ];
     for (const npc of npcs) {
         try {
             npc.remove();
@@ -253,7 +262,7 @@ function restaurarEstadoOriginal(player, estado) {
 }
 function regresarAlCentro(player, congelado) {
     try {
-        player.teleport(POSICION_RETORNO_ARENA, { dimension: dimensionArena(), checkForBlocks: true });
+        player.teleport({ ...POSICION_RETORNO_ARENA, x: POSICION_RETORNO_ARENA.x + 0.5, z: POSICION_RETORNO_ARENA.z + 0.5 }, { dimension: dimensionArena(), checkForBlocks: true });
         congelar(player, congelado);
     }
     catch {
@@ -267,10 +276,12 @@ function cancelarPartida(motivo, jugadorQueQueda) {
     partida = undefined;
     limpiarCampo();
     quitarNpcs();
-    if (jugadorQueQueda) {
-        const estado = jugadorQueQueda.id === actual.p1Id ? actual.originalP1 : actual.originalP2;
-        restaurarEstadoOriginal(jugadorQueQueda, estado);
-        jugadorQueQueda.sendMessage(`§eLa partida fue cancelada: ${motivo}`);
+    for (const [id, estado] of [[actual.p1Id, actual.originalP1], [actual.p2Id, actual.originalP2]]) {
+        const jugador = jugadorPorId(id);
+        if (jugador) {
+            restaurarEstadoOriginal(jugador, estado);
+            jugador.sendMessage(`§eLa partida fue cancelada: ${motivo}`);
+        }
     }
     asegurarNpcs();
 }
@@ -399,8 +410,22 @@ function abrirMenuNpc(player) {
 }
 /** Inicia la sesión de arena inmediatamente después de aceptar una solicitud PvP. */
 export function iniciarPartidaArena(retador, retado) {
-    if (!obtenerPvpActivo() || partida)
+    if (!obtenerPvpActivo() || partida || arenaChanging())
         return false;
+    const active = arenaState().active;
+    if (!active) {
+        retador.sendMessage('§eNo hay una arena PvP activada desde el dashboard.');
+        retado.sendMessage('§eNo hay una arena PvP activada desde el dashboard.');
+        return false;
+    }
+    try {
+        comprobarSuelo(active);
+    }
+    catch (error) {
+        retador.sendMessage(`§cArena no disponible: ${String(error)}`);
+        retado.sendMessage(`§cArena no disponible: ${String(error)}`);
+        return false;
+    }
     partida = {
         p1Id: retador.id,
         p2Id: retado.id,
@@ -451,6 +476,8 @@ world.beforeEvents.playerInteractWithEntity.subscribe((event) => {
 // Protege la construcción original de la arena, pero permite retirar los
 // bloques rojo y verde que los participantes hayan colocado durante una ronda.
 world.beforeEvents.playerBreakBlock.subscribe((event) => {
+    if (!arenaState().active || event.dimension.id !== DIMENSION_ARENA)
+        return;
     if (!estaDentro(event.block.location, AREA_SEGURA))
         return;
     if (event.player.hasTag('op') && event.player.getGameMode() === GameMode.Creative)
@@ -473,7 +500,7 @@ world.beforeEvents.playerInteractWithBlock.subscribe((event) => {
     event.cancel = true;
 });
 world.beforeEvents.explosion.subscribe((event) => {
-    if (event.dimension.id !== DIMENSION_ARENA)
+    if (!arenaState().active || event.dimension.id !== DIMENSION_ARENA)
         return;
     event.setImpactedBlocks(event.getImpactedBlocks().filter((block) => {
         if (!estaDentro(block.location, AREA_SEGURA))
@@ -546,18 +573,66 @@ system.runInterval(() => {
         }
     }
 }, 1);
-// Sólo el lobby necesita reparar NPC en caliente. Fuera de una partida no se
-// generan, para no producir entidades si la arena aún no está construida.
-system.runInterval(() => {
-    if (partida?.fase !== 'lobby')
+function comprobarSuelo(arena) {
+    const dimension = world.getDimension(arena.dimension);
+    for (const [label, position] of Object.entries({ P1: arena.p1, P2: arena.p2, Retorno: arena.returnPoint, NPC1: arena.npc1, NPC2: arena.npc2 })) {
+        const floor = dimension.getBlock({ x: position.x, y: position.y - 1, z: position.z });
+        const feet = dimension.getBlock(position);
+        const head = dimension.getBlock({ ...position, y: position.y + 1 });
+        const support = dimension.getBlockFromRay({ x: position.x + 0.5, y: position.y + 0.1, z: position.z + 0.5 }, { x: 0, y: -1, z: 0 }, { maxDistance: 1.2, includePassableBlocks: false, includeLiquidBlocks: false });
+        if (!floor || floor.isAir || floor.isLiquid || support?.block.location.y !== position.y - 1 || !feet?.isAir || !head?.isAir)
+            throw new Error(`${label}: falta suelo sólido o espacio libre en ${position.x}, ${position.y}, ${position.z}.`);
+    }
+}
+function usarArena(arena) {
+    try {
+        quitarNpcs();
+    }
+    catch { /* Los chunks anteriores pueden estar descargados. */ }
+    try {
+        dimensionArena().runCommand(`tickingarea remove ${NOMBRE_TICKING_AREA_ARENA}`);
+    }
+    catch { /* No existía. */ }
+    if (!arena)
         return;
-    asegurarNpcs();
-}, 20);
+    DIMENSION_ARENA = arena.dimension;
+    NPC_ARENA_P1 = arena.npc1;
+    NPC_ARENA_P2 = arena.npc2;
+    POSICION_P1 = arena.p1;
+    POSICION_P2 = arena.p2;
+    POSICION_RETORNO_ARENA = arena.returnPoint;
+    AREA_SEGURA = arena.bounds;
+    PORTERIA_P1 = arena.goal1;
+    PORTERIA_P2 = arena.goal2;
+    YAW_P1 = arena.yaw1;
+    YAW_P2 = arena.yaw2;
+    asegurarChunksArena();
+}
+installArenaControl({
+    busy: () => !!partida,
+    apply: usarArena,
+    prepare: async (arena) => {
+        const dimension = world.getDimension(arena.dimension);
+        const { min, max } = arena.bounds;
+        const temporary = 'spb_pvp_check';
+        try {
+            dimension.runCommand(`tickingarea add ${min.x} ${min.y} ${min.z} ${max.x} ${max.y} ${max.z} ${temporary} true`);
+            await system.waitTicks(40);
+            comprobarSuelo(arena);
+        }
+        finally {
+            try {
+                dimension.runCommand(`tickingarea remove ${temporary}`);
+            }
+            catch { /* Ya no existe. */ }
+        }
+    },
+});
+system.runInterval(asegurarNpcs, 20);
 // Una recarga del paquete no conserva una partida en memoria. Liberamos cualquier
 // bloqueo de movimiento que pudiera haber quedado de una sesión anterior.
 system.run(() => {
-    asegurarChunksArena();
-    quitarNpcs();
+    usarArena(arenaState().active);
     for (const player of world.getPlayers())
         congelar(player, false);
 });

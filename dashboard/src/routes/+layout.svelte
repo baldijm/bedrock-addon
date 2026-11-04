@@ -107,6 +107,7 @@
 									>{/snippet}</Sidebar.MenuButton
 							></Sidebar.MenuItem
 						>
+						<Sidebar.MenuItem><Sidebar.MenuButton isActive={isActive('/pvp')} tooltipContent="Arenas PvP">{#snippet child({ props })}<a href="/pvp" {...props}><MapPinned /><span>Arenas PvP</span></a>{/snippet}</Sidebar.MenuButton></Sidebar.MenuItem>
 						<Sidebar.MenuItem
 							><Sidebar.MenuButton isActive={isActive('/terminal')} tooltipContent="Terminal"
 								>{#snippet child({ props })}<a href="/terminal" {...props}
