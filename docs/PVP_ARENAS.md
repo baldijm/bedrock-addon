@@ -10,6 +10,9 @@ Los datos se guardan dentro del mundo con la propiedad dinámica
 2. En Arenas PvP, crear una arena o editar el borrador existente.
 3. Configurar dimensión, posiciones de los dos jugadores, centro de retorno,
    posiciones y orientación de NPCs, límites del área y ambas porterías.
+   Para las áreas, escribir dos esquinas opuestas en **De** y **A**, en cualquier
+   orden. El dashboard calcula automáticamente los límites de cada eje antes
+   de enviarlos a Bedrock, incluyendo coordenadas negativas.
 4. Guardar el borrador. Esto no cambia la configuración activa.
 5. Activar la arena guardada. Bedrock carga temporalmente la zona y comprueba
    suelo y espacio libre en las cinco posiciones antes de confirmar.

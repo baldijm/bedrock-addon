@@ -50,11 +50,11 @@
 		working = action === 'activate' ? 'Cargando zona y comprobando suelo y espacio libre…' : 'Guardando y esperando confirmación de Bedrock…';
 		error = ''; notice = '';
 		try {
-			const response = await fetch('/api/pvp/arenas', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, revision: catalog.revision, arena: draft, id: selected, confirmation }) });
+			const response = await fetch('/api/pvp/arenas', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, revision: catalog.revision, arena: action === 'save' ? validateArena(draft) : draft, id: selected, confirmation }) });
 			const result = await response.json() as { error?: string; state: ArenaState; busy: boolean };
 			if (!response.ok) throw new Error(result.error);
 			catalog = result.state; busy = result.busy;
-			if (action === 'save') selected = draft.id;
+			if (action === 'save') { selected = draft.id; draft = clone(catalog.arenas.find(item => item.id === selected)!); }
 			if (action === 'delete') { const next = catalog.arenas[0]; if (next) edit(next); else create(); }
 			pending = ''; confirmation = '';
 			notice = action === 'save' ? 'Borrador guardado. Actívalo para utilizar estas coordenadas en las partidas.' : action === 'activate' ? 'Arena activada. Los NPC aparecerán únicamente durante el lobby de una partida.' : action === 'deactivate' ? 'Arena desactivada. No se pueden iniciar partidas.' : 'Borrador eliminado.';
@@ -131,5 +131,5 @@
 	<div><p class="mb-2 text-sm font-medium">{label}</p><div class="grid grid-cols-3 gap-2">{#each ['x', 'y', 'z'] as axis}<label class="text-xs text-muted-foreground">{axis.toUpperCase()}<Input type="number" step={1} bind:value={point[axis as keyof Point]} /></label>{/each}</div></div>
 {/snippet}
 {#snippet regionEditor(region: Region)}
-	<div class="flex flex-col gap-3">{@render pointEditor('Esquina mínima', region.min)}{@render pointEditor('Esquina máxima', region.max)}</div>
+	<div class="flex flex-col gap-3">{@render pointEditor('De', region.min)}{@render pointEditor('A', region.max)}<p class="text-xs text-muted-foreground">Indica dos esquinas opuestas. Puedes escribirlas en cualquier orden; los límites se calculan automáticamente.</p></div>
 {/snippet}

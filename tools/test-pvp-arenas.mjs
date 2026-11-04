@@ -125,9 +125,22 @@ function synthetic(exports) {
 }
 const auth = synthetic({ isAuthenticated: async () => authenticated, json: (body, status = 200) => ({ body, status }), unauthorized: () => ({ status: 401 }) });
 const environmentModule = synthetic({ resolveEnvironment: () => environment });
+const dashboardSchema = await dashboardModule('dashboard/src/lib/pvp-arenas.ts', {
+  '../../../src/scripts/features/games/arenaSchema': cache.get('./arenaSchema.js'),
+});
+const reversed = structuredClone(arena);
+reversed.goal2 = { min: { x: -499, y: 201, z: 179 }, max: { x: -501, y: 201, z: 181 } };
+[reversed.bounds.min, reversed.bounds.max] = [reversed.bounds.max, reversed.bounds.min];
+[reversed.goal1.min, reversed.goal1.max] = [reversed.goal1.max, reversed.goal1.min];
+const normalized = dashboardSchema.namespace.validateArena(reversed);
+assert.equal(normalized.goal2.min.x, -501);
+assert.equal(normalized.goal2.max.x, -499);
+assert.equal(normalized.goal2.min.y, 201, 'a one-block-high region is valid');
+assert.deepEqual(JSON.parse(JSON.stringify(normalized.bounds)), arena.bounds);
+assert.equal(reversed.goal2.min.x, -499, 'normalization does not mutate the form');
 const api = await dashboardModule('dashboard/src/routes/api/pvp/arenas/+server.ts', {
   '#lib/server/auth': auth, '#lib/server/environment': environmentModule,
-  '#lib/server/bridge': bridge, '#lib/server/pvp-arenas': transport, '#lib/pvp-arenas': cache.get('./arenaSchema.js'),
+  '#lib/server/bridge': bridge, '#lib/server/pvp-arenas': transport, '#lib/pvp-arenas': dashboardSchema,
 });
 authenticated = false;
 assert.equal((await api.namespace.GET({ request: {} })).status, 401);
@@ -142,4 +155,8 @@ apiResult = await api.namespace.GET({ request: {} });
 assert.equal(apiResult.status, 200);
 assert.equal(apiResult.body.world, 'Forever World');
 assert.ok(destinations.every(item => item === 'production'), 'environment selection is preserved through every bridge call');
+environment = 'staging';
+apiResult = await api.namespace.POST({ request: { text: async () => JSON.stringify({ action: 'save', revision: 5, arena: reversed }) } });
+assert.equal(apiResult.status, 200, 'API accepts unordered corners and sends canonical bounds to the unchanged add-on');
+assert.equal(apiResult.body.state.arenas[0].goal2.min.x, -501);
 console.log('PvP: schema, persistence, revisions, activation failures, concurrency, source permissions, match lock, deletion, dashboard transport, API authentication and Production confirmation passed.');
