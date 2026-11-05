@@ -27,7 +27,7 @@
       "textures": "textures/blocks/concrete_powder_light_blue"
     },
     "light_gray_concrete_powder": {
-      "textures": "textures/blocks/concrete_powder_light_gray"
+      "textures": "textures/blocks/spb_concrete_powder_silver"
     },
     "lime_concrete_powder": {
       "textures": "textures/blocks/concrete_powder_lime"
